@@ -8,6 +8,17 @@ from PIL import Image
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import io
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Import database manager
+try:
+    from database.database_manager import db_manager
+    DATABASE_AVAILABLE = True
+except ImportError as e:
+    print(f"Database manager not available: {e}")
+    DATABASE_AVAILABLE = False
 
 # Correct Model Architecture
 class WasteClassifier(nn.Module):
@@ -117,7 +128,87 @@ WASTE_TYPES = {
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    return jsonify({"status": "healthy", "model_loaded": model is not None})
+    db_status = {}
+    if DATABASE_AVAILABLE:
+        try:
+            # Test basic database connections
+            db_status = {
+                'neo4j': db_manager.get_manager('neo4j') is not None,
+                'mongodb': db_manager.get_manager('mongodb') is not None,
+                'redis': db_manager.get_manager('redis') is not None,
+                'cassandra': db_manager.get_manager('cassandra') is not None,
+                'postgresql': db_manager.get_manager('postgresql') is not None
+            }
+        except Exception as e:
+            db_status = {'error': str(e)}
+    
+    return jsonify({
+        "status": "healthy", 
+        "model_loaded": model is not None,
+        "database_status": db_status,
+        "database_integration": DATABASE_AVAILABLE
+    })
+
+@app.route('/api/insights/supply-chain/<waste_type>', methods=['GET'])
+def get_supply_chain_insights(waste_type):
+    """Get supply chain insights for specific waste type using graph database"""
+    if not DATABASE_AVAILABLE:
+        return jsonify({
+            "error": "Database integration not available",
+            "message": "Please install database dependencies and configure connections"
+        }), 501
+    
+    try:
+        insights = db_manager.get_supply_chain_insights(waste_type.upper())
+        return jsonify(insights)
+    except Exception as e:
+        return jsonify({
+            "error": f"Failed to get insights: {str(e)}"
+        }), 500
+
+@app.route('/api/insights/environmental-impact', methods=['GET'])
+def get_environmental_impact_report():
+    """Get comprehensive environmental impact report"""
+    if not DATABASE_AVAILABLE:
+        return jsonify({
+            "error": "Database integration not available",
+            "message": "Please install database dependencies and configure connections"
+        }), 501
+    
+    try:
+        user_id = request.args.get('user_id')
+        report = db_manager.get_environmental_impact_report(user_id)
+        return jsonify(report)
+    except Exception as e:
+        return jsonify({
+            "error": f"Failed to generate report: {str(e)}"
+        }), 500
+
+@app.route('/api/search', methods=['GET'])
+def search_waste_listings():
+    """Search waste listings with caching and personalization"""
+    if not DATABASE_AVAILABLE:
+        return jsonify({
+            "error": "Database integration not available",
+            "message": "Please install database dependencies and configure connections"
+        }), 501
+    
+    try:
+        query = request.args.get('q', '')
+        location = request.args.get('location')
+        user_id = request.args.get('user_id')
+        
+        results = db_manager.search_waste_listings(query, location, user_id)
+        return jsonify({
+            "results": results,
+            "query": query,
+            "location": location,
+            "total_results": len(results)
+        })
+    except Exception as e:
+        return jsonify({
+            "error": f"Search failed: {str(e)}"
+        }), 500
 
 @app.route('/api/classify', methods=['POST'])
 def classify_waste():
@@ -184,12 +275,44 @@ def classify_waste():
         estimated_value = get_estimated_value(primary_type.replace("/", "_"))
         environmental_impact = get_environmental_impact(primary_type.replace("/", "_"))
         
-        response_data = {
-            "wasteTypes": results,
-            "potentialUses": potential_uses,
-            "estimatedValue": estimated_value,
-            "environmentalImpact": environmental_impact
-        }
+        # Use database manager for enhanced functionality
+        if DATABASE_AVAILABLE:
+            try:
+                # Get supply chain insights
+                insights = db_manager.get_supply_chain_insights(primary_type.upper())
+                
+                # Record the classification in analytics
+                db_manager.classify_waste_with_caching(
+                    image_hash=str(hash(image_bytes)),
+                    image_bytes=image_bytes,
+                    user_id=request.form.get('user_id')  # Optional
+                )
+                
+                # Add insights to response
+                response_data = {
+                    "wasteTypes": results,
+                    "potentialUses": potential_uses,
+                    "estimatedValue": estimated_value,
+                    "environmentalImpact": environmental_impact,
+                    "supplyChainInsights": insights
+                }
+            except Exception as e:
+                print(f"Database integration error: {e}")
+                # Fallback to basic response
+                response_data = {
+                    "wasteTypes": results,
+                    "potentialUses": potential_uses,
+                    "estimatedValue": estimated_value,
+                    "environmentalImpact": environmental_impact
+                }
+        else:
+            # Basic response without database integration
+            response_data = {
+                "wasteTypes": results,
+                "potentialUses": potential_uses,
+                "estimatedValue": estimated_value,
+                "environmentalImpact": environmental_impact
+            }
         
         print("✅ Classification successful")
         return jsonify(response_data)

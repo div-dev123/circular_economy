@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+backend/model.pth
+backend/.env.example
+backend/database/__pycache__/
+*.pyc
