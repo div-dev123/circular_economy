@@ -1,0 +1,590 @@
+.impact {
+  margin-top: 80px;
+}
+
+.impact-hero {
+  background: linear-gradient(135deg, #2d5a3d 0%, #3a7d44 100%);
+  color: white;
+  padding: 4rem 0;
+  text-align: center;
+}
+
+.impact-hero h1 {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.subtitle {
+  font-size: 1.25rem;
+  opacity: 0.9;
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.metrics-section {
+  padding: 3rem 0;
+  background: #f8f9fa;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 2rem;
+}
+
+.metric-card {
+  background: white;
+  padding: 2rem;
+  border-radius: 15px;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  transition: transform 0.3s ease;
+}
+
+.metric-card:hover {
+  transform: translateY(-5px);
+}
+
+.metric-card.primary {
+  border-top: 4px solid #2d5a3d;
+}
+
+.metric-card.secondary {
+  border-top: 4px solid #3a7d44;
+}
+
+.metric-icon {
+  font-size: 2.5rem;
+}
+
+.metric-content {
+  flex: 1;
+}
+
+.metric-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #2d5a3d;
+  margin-bottom: 0.3rem;
+}
+
+.metric-label {
+  color: #333;
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+
+.metric-trend {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.metric-trend.positive {
+  color: #28a745;
+}
+
+.charts-section {
+  padding: 5rem 0;
+  background: white;
+}
+
+.section-header {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.section-header h2 {
+  font-size: 2.5rem;
+  color: #333;
+  margin-bottom: 1rem;
+}
+
+.section-header p {
+  font-size: 1.2rem;
+  color: #666;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 2rem;
+}
+
+.chart-card {
+  background: #f8f9fa;
+  padding: 2rem;
+  border-radius: 15px;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.chart-header h3 {
+  color: #333;
+  margin: 0;
+}
+
+.chart-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.time-filter {
+  padding: 0.5rem 1rem;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+}
+
+.time-filter.active {
+  background: #2d5a3d;
+  color: white;
+  border-color: #2d5a3d;
+}
+
+.chart-container {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 10px;
+}
+
+.line-chart {
+  position: relative;
+  height: 200px;
+  margin-bottom: 1.5rem;
+}
+
+.chart-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    linear-gradient(to right, #eee 1px, transparent 1px) 0 0,
+    linear-gradient(to bottom, #eee 1px, transparent 1px) 0 0;
+  background-size: 20% 20%;
+}
+
+.chart-line {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.data-point {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #2d5a3d;
+  border-radius: 50%;
+  transform: translate(-50%, 50%);
+}
+
+.chart-stats {
+  display: flex;
+  justify-content: space-around;
+}
+
+.stat {
+  text-align: center;
+}
+
+.stat-label {
+  display: block;
+  color: #666;
+  font-size: 0.9rem;
+  margin-bottom: 0.3rem;
+}
+
+.stat-value {
+  display: block;
+  font-weight: 700;
+  color: #2d5a3d;
+  font-size: 1.1rem;
+}
+
+.pie-chart {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  margin: 0 auto 2rem;
+}
+
+.pie-slice {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+.pie-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.center-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #2d5a3d;
+}
+
+.center-label {
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.chart-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.legend-color {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+}
+
+.legend-text {
+  display: flex;
+  justify-content: space-between;
+  flex: 1;
+}
+
+.legend-label {
+  color: #333;
+  font-weight: 500;
+}
+
+.legend-percent {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.regional-section {
+  padding: 5rem 0;
+  background: #f8f9fa;
+}
+
+.regional-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+}
+
+.region-card {
+  background: white;
+  padding: 2rem;
+  border-radius: 15px;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+}
+
+.region-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.region-header h3 {
+  color: #333;
+  margin: 0;
+}
+
+.region-flag {
+  font-size: 2rem;
+}
+
+.region-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.8rem;
+  background: #f8f9fa;
+  border-radius: 10px;
+}
+
+.stat-icon {
+  font-size: 1.5rem;
+}
+
+.stat-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-value {
+  font-weight: 700;
+  color: #2d5a3d;
+  font-size: 1.2rem;
+}
+
+.stat-label {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.sustainability-section {
+  padding: 5rem 0;
+  background: white;
+}
+
+.sustainability-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4rem;
+  align-items: center;
+}
+
+.sustainability-text h2 {
+  font-size: 2.5rem;
+  color: #333;
+  margin-bottom: 1.5rem;
+}
+
+.sustainability-text p {
+  font-size: 1.1rem;
+  color: #666;
+  margin-bottom: 2rem;
+  line-height: 1.7;
+}
+
+.commitments {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.commitment {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.commitment-icon {
+  font-size: 2rem;
+  min-width: 40px;
+}
+
+.commitment-content h4 {
+  color: #2d5a3d;
+  margin-bottom: 0.5rem;
+}
+
+.commitment-content p {
+  color: #666;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.sustainability-visual {
+  display: flex;
+  justify-content: center;
+}
+
+.impact-tree {
+  position: relative;
+  width: 300px;
+  height: 300px;
+}
+
+.tree-trunk {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 200px;
+  background: #8B4513;
+  border-radius: 10px 10px 0 0;
+}
+
+.trunk-section {
+  padding: 1rem;
+  border-bottom: 1px solid #654321;
+  text-align: center;
+}
+
+.trunk-section:last-child {
+  border-bottom: none;
+}
+
+.section-label {
+  display: block;
+  color: #f8f9fa;
+  font-size: 0.7rem;
+  margin-bottom: 0.3rem;
+}
+
+.section-value {
+  display: block;
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.tree-branches {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 250px;
+}
+
+.branch {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #2d5a3d;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.branch:nth-child(1) {
+  top: 0;
+  left: 0;
+}
+
+.branch:nth-child(2) {
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.branch:nth-child(3) {
+  bottom: 0;
+  left: 0;
+}
+
+.branch-icon {
+  font-size: 1.2rem;
+}
+
+.cta-section {
+  padding: 5rem 0;
+  background: linear-gradient(135deg, #1a2e1f 0%, #2d5a3d 100%);
+  color: white;
+  text-align: center;
+}
+
+.cta-content h2 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.cta-content p {
+  font-size: 1.2rem;
+  margin-bottom: 2.5rem;
+  opacity: 0.9;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.cta-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 0.75rem 1.5rem;
+  border-radius: 30px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: none;
+  font-size: 1rem;
+}
+
+.btn-primary {
+  background: white;
+  color: #2d5a3d;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(255, 255, 255, 0.3);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: white;
+  border: 2px solid white;
+}
+
+.btn-secondary:hover {
+  background: white;
+  color: #2d5a3d;
+}
+
+.btn-large {
+  padding: 1rem 2rem;
+  font-size: 1.1rem;
+}
+
+@media (max-width: 768px) {
+  .impact-hero h1 {
+    font-size: 2rem;
+  }
+  
+  .section-header h2 {
+    font-size: 2rem;
+  }
+  
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .regional-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .sustainability-content {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+  
+  .impact-tree {
+    width: 250px;
+    height: 250px;
+  }
+  
+  .cta-buttons {
+    flex-direction: column;
+    align-items: center;
+  }
+}
