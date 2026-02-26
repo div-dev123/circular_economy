@@ -1,4 +1,5 @@
 from neo4j import GraphDatabase
+from neo4j.exceptions import AuthError, ServiceUnavailable
 from typing import List, Dict, Any
 import logging
 
@@ -6,7 +7,24 @@ logger = logging.getLogger(__name__)
 
 class Neo4jManager:
     def __init__(self, uri: str, username: str, password: str):
-        self.driver = GraphDatabase.driver(uri, auth=(username, password))
+        try:
+            self.driver = GraphDatabase.driver(uri, auth=(username, password))
+            # Test the connection
+            with self.driver.session() as session:
+                session.run("RETURN 1")
+            logger.info("Neo4j connection established successfully")
+        except AuthError as e:
+            logger.error(f"Authentication failed for Neo4j: {e}")
+            logger.error("Please check your username and password in the .env file")
+            logger.error("If this is your first time connecting, run the setup_neo4j_password.py script")
+            raise
+        except ServiceUnavailable as e:
+            logger.error(f"Neo4j service is unavailable: {e}")
+            logger.error("Make sure Neo4j is running on your system")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to connect to Neo4j: {e}")
+            raise
         
     def close(self):
         self.driver.close()
@@ -67,31 +85,35 @@ class Neo4jManager:
     def find_industries_for_waste(self, waste_type: str, location: str = None, 
                                 max_distance: float = 100) -> List[Dict]:
         """Find all industries that can use specific waste type"""
-        query = """
-        MATCH (w:Waste {type: $waste_type})
-        MATCH (i:Industry)
-        WHERE i.type IN $compatible_industries
-        """
-        
-        if location:
-            query += """
-            AND distance(point({latitude: w.latitude, longitude: w.longitude}),
-                       point({latitude: i.latitude, longitude: i.longitude})) < $max_distance
+        try:
+            query = """
+            MATCH (w:Waste {type: $waste_type})
+            MATCH (i:Industry)
+            WHERE i.type IN $compatible_industries
             """
-        
-        query += """
-        RETURN i.id as industry_id, i.type as industry_type, i.location as location,
-               w.quantity as available_quantity
-        ORDER BY w.quantity DESC
-        """
-        
-        compatible_industries = self._get_compatible_industries(waste_type)
-        
-        with self.driver.session() as session:
-            result = session.run(query, waste_type=waste_type,
-                               compatible_industries=compatible_industries,
-                               max_distance=max_distance)
-            return [record.data() for record in result]
+            
+            if location:
+                query += """
+                AND distance(point({latitude: w.latitude, longitude: w.longitude}),
+                           point({latitude: i.latitude, longitude: i.longitude})) < $max_distance
+                """
+            
+            query += """
+            RETURN i.id as industry_id, i.type as industry_type, i.location as location,
+                   w.quantity as available_quantity
+            ORDER BY w.quantity DESC
+            """
+            
+            compatible_industries = self._get_compatible_industries(waste_type)
+            
+            with self.driver.session() as session:
+                result = session.run(query, waste_type=waste_type,
+                                   compatible_industries=compatible_industries,
+                                   max_distance=max_distance)
+                return [record.data() for record in result]
+        except Exception as e:
+            logger.error(f"Error finding industries for waste type {waste_type}: {e}")
+            return []
     
     def find_shortest_supply_path(self, waste_id: str, target_industry_id: str) -> List[Dict]:
         """Find shortest path from waste producer to consumer"""
@@ -109,18 +131,22 @@ class Neo4jManager:
     
     def get_circular_economy_pathways(self, waste_type: str) -> List[Dict]:
         """Find circular economy pathways for waste type"""
-        query = """
-        MATCH (w:Waste {type: $waste_type})-[:SUPPLIED_TO]->(i1:Industry)
-        MATCH (i1)-[:PRODUCES]->(p:Product)-[:GENERATES]->(w2:Waste)
-        MATCH (w2)-[:SUPPLIED_TO]->(i2:Industry)
-        RETURN w.type as input_waste, i1.type as first_industry,
-               p.name as intermediate_product, w2.type as output_waste,
-               i2.type as second_industry
-        """
-        
-        with self.driver.session() as session:
-            result = session.run(query, waste_type=waste_type)
-            return [record.data() for record in result]
+        try:
+            query = """
+            MATCH (w:Waste {type: $waste_type})-[:SUPPLIED_TO]->(i1:Industry)
+            MATCH (i1)-[:PRODUCES]->(p:Product)-[:GENERATES]->(w2:Waste)
+            MATCH (w2)-[:SUPPLIED_TO]->(i2:Industry)
+            RETURN w.type as input_waste, i1.type as first_industry,
+                   p.name as intermediate_product, w2.type as output_waste,
+                   i2.type as second_industry
+            """
+            
+            with self.driver.session() as session:
+                result = session.run(query, waste_type=waste_type)
+                return [record.data() for record in result]
+        except Exception as e:
+            logger.error(f"Error getting circular economy pathways for waste type {waste_type}: {e}")
+            return []
     
     def _get_compatible_industries(self, waste_type: str) -> List[str]:
         """Map waste types to compatible industries"""

@@ -105,34 +105,43 @@ class DatabaseManager:
             transaction_id = None
             
             # PostgreSQL: Store transaction details
-            postgres_manager = self.managers['postgresql']
-            transaction_id = postgres_manager.record_transaction(transaction_data)
+            postgres_manager = self.managers.get('postgresql')
+            if postgres_manager:
+                transaction_id = postgres_manager.record_transaction(transaction_data)
+            else:
+                # Generate a transaction ID if PostgreSQL is not available
+                from uuid import uuid4
+                transaction_id = str(uuid4())
+                logger.warning("PostgreSQL not available, using generated transaction ID")
             
             # MongoDB: Store user profile update
             if 'user_id' in transaction_data:
-                mongo_manager = self.managers['mongodb']
-                mongo_manager.update_user(str(transaction_data['user_id']), {
-                    'last_transaction_at': datetime.utcnow()
-                })
+                mongo_manager = self.managers.get('mongodb')
+                if mongo_manager:
+                    mongo_manager.update_user(str(transaction_data['user_id']), {
+                        'last_transaction_at': datetime.utcnow()
+                    })
             
             # Cassandra: Store analytics and audit logs
-            cassandra_manager = self.managers['cassandra']
-            cassandra_manager.record_transaction(transaction_data)
-            cassandra_manager.log_audit_event(
-                user_id=str(transaction_data.get('user_id', '')),
-                action='CREATE_TRANSACTION',
-                resource_type='transaction',
-                resource_id=transaction_id,
-                details=f"Created transaction for {transaction_data.get('waste_type')}"
-            )
+            cassandra_manager = self.managers.get('cassandra')
+            if cassandra_manager:
+                cassandra_manager.record_transaction(transaction_data)
+                cassandra_manager.log_audit_event(
+                    user_id=str(transaction_data.get('user_id', '')),
+                    action='CREATE_TRANSACTION',
+                    resource_type='transaction',
+                    resource_id=transaction_id,
+                    details=f"Created transaction for {transaction_data.get('waste_type')}"
+                )
             
             # Redis: Update real-time metrics
-            redis_manager = self.managers['redis']
-            redis_manager.increment_waste_views(str(transaction_data.get('waste_id', '')))
+            redis_manager = self.managers.get('redis')
+            if redis_manager:
+                redis_manager.increment_waste_views(str(transaction_data.get('waste_id', '')))
             
             # Neo4j: Update supply chain relationships
-            neo4j_manager = self.managers['neo4j']
-            if 'waste_id' in transaction_data and 'industry_id' in transaction_data:
+            neo4j_manager = self.managers.get('neo4j')
+            if neo4j_manager and 'waste_id' in transaction_data and 'industry_id' in transaction_data:
                 neo4j_manager.create_supply_chain_relationship(
                     waste_id=str(transaction_data['waste_id']),
                     industry_id=str(transaction_data['industry_id']),
@@ -153,39 +162,47 @@ class DatabaseManager:
         """Search waste listings with caching and analytics"""
         try:
             # Check Redis cache first
-            redis_manager = self.managers['redis']
-            cache_key = f"search:{hash(query)}:{query}"
-            cached_results = redis_manager.get_cached_search(query)
-            
-            if cached_results:
-                logger.info("Returning cached search results")
-                return cached_results
+            redis_manager = self.managers.get('redis')
+            if redis_manager:
+                cache_key = f"search:{hash(query)}:{query}"
+                cached_results = redis_manager.get_cached_search(query)
+                
+                if cached_results:
+                    logger.info("Returning cached search results")
+                    return cached_results
             
             # MongoDB: Perform actual search
-            mongo_manager = self.managers['mongodb']
-            results = mongo_manager.search_waste_listings(query, location)
+            mongo_manager = self.managers.get('mongodb')
+            if mongo_manager:
+                results = mongo_manager.search_waste_listings(query, location)
+            else:
+                results = []
+                logger.warning("MongoDB not available, returning empty results")
             
             # PostgreSQL: Get user preferences for personalized results
             if user_id:
-                postgres_manager = self.managers['postgresql']
-                user_companies = postgres_manager.get_user_companies(int(user_id))
-                # Apply personalization logic here
-                
+                postgres_manager = self.managers.get('postgresql')
+                if postgres_manager:
+                    user_companies = postgres_manager.get_user_companies(int(user_id))
+                    # Apply personalization logic here
+                    
             # Cassandra: Record search analytics
-            cassandra_manager = self.managers['cassandra']
-            cassandra_manager.record_analytics_metric(
-                metric_name='search_queries',
-                timestamp=datetime.utcnow(),
-                dimension1=query,
-                dimension2=location or 'global',
-                value=1.0
-            )
+            cassandra_manager = self.managers.get('cassandra')
+            if cassandra_manager:
+                cassandra_manager.record_analytics_metric(
+                    metric_name='search_queries',
+                    timestamp=datetime.utcnow(),
+                    dimension1=query,
+                    dimension2=location or 'global',
+                    value=1.0
+                )
             
             # Cache results in Redis
-            redis_manager.cache_waste_search(query, results, ttl=1800)
+            if redis_manager:
+                redis_manager.cache_waste_search(query, results, ttl=1800)
             
             # Track user interaction in Redis
-            if user_id:
+            if user_id and redis_manager:
                 redis_manager.track_user_interaction(user_id, 'search', 'query')
             
             return results
@@ -197,21 +214,30 @@ class DatabaseManager:
     def get_supply_chain_insights(self, waste_type: str) -> Dict[str, Any]:
         """Get comprehensive supply chain insights using graph database"""
         try:
+            # Initialize default values
+            industries = []
+            pathways = []
+            industry_stats = {}
+            trends = []
+            
             # Neo4j: Get industry connections and pathways
-            neo4j_manager = self.managers['neo4j']
-            industries = neo4j_manager.find_industries_for_waste(waste_type)
-            pathways = neo4j_manager.get_circular_economy_pathways(waste_type)
+            neo4j_manager = self.managers.get('neo4j')
+            if neo4j_manager:
+                industries = neo4j_manager.find_industries_for_waste(waste_type)
+                pathways = neo4j_manager.get_circular_economy_pathways(waste_type)
             
             # PostgreSQL: Get industry statistics
-            postgres_manager = self.managers['postgresql']
-            industry_stats = postgres_manager.get_industry_statistics()
+            postgres_manager = self.managers.get('postgresql')
+            if postgres_manager:
+                industry_stats = postgres_manager.get_industry_statistics()
             
             # Cassandra: Get historical trends
-            cassandra_manager = self.managers['cassandra']
-            trends = cassandra_manager.get_waste_diversion_trends(days=90)
+            cassandra_manager = self.managers.get('cassandra')
+            if cassandra_manager:
+                trends = cassandra_manager.get_waste_diversion_trends(days=90)
             
             # Redis: Get real-time metrics
-            redis_manager = self.managers['redis']
+            redis_manager = self.managers.get('redis')
             # Get recent interactions, views, etc.
             
             insights = {
@@ -235,23 +261,31 @@ class DatabaseManager:
     def get_environmental_impact_report(self, user_id: str = None) -> Dict[str, Any]:
         """Generate comprehensive environmental impact report"""
         try:
+            # Initialize default values
+            co2_savings = 0.0
+            trends = []
+            compliance_report = {}
+            user_stats = {}
+            
             # Cassandra: Get environmental metrics
-            cassandra_manager = self.managers['cassandra']
-            co2_savings = cassandra_manager.get_co2_savings_by_month(2026, 2)
-            trends = cassandra_manager.get_waste_diversion_trends(days=365)
+            cassandra_manager = self.managers.get('cassandra')
+            if cassandra_manager:
+                co2_savings = cassandra_manager.get_co2_savings_by_month(2026, 2)
+                trends = cassandra_manager.get_waste_diversion_trends(days=365)
             
             # PostgreSQL: Get compliance data
-            postgres_manager = self.managers['postgresql']
-            compliance_report = postgres_manager.get_compliance_report()
+            postgres_manager = self.managers.get('postgresql')
+            if postgres_manager:
+                compliance_report = postgres_manager.get_compliance_report()
             
             # MongoDB: Get user-specific statistics
-            user_stats = {}
             if user_id:
-                mongo_manager = self.managers['mongodb']
-                user_stats = mongo_manager.get_waste_statistics(user_id)
+                mongo_manager = self.managers.get('mongodb')
+                if mongo_manager:
+                    user_stats = mongo_manager.get_waste_statistics(user_id)
             
             # Redis: Get real-time engagement metrics
-            redis_manager = self.managers['redis']
+            redis_manager = self.managers.get('redis')
             # Get views, interactions, etc.
             
             report = {
@@ -277,12 +311,13 @@ class DatabaseManager:
         """AI waste classification with caching"""
         try:
             # Check Redis cache first
-            redis_manager = self.managers['redis']
-            cached_result = redis_manager.get_cached_classification(image_hash)
-            
-            if cached_result:
-                logger.info("Returning cached classification result")
-                return cached_result
+            redis_manager = self.managers.get('redis')
+            if redis_manager:
+                cached_result = redis_manager.get_cached_classification(image_hash)
+                
+                if cached_result:
+                    logger.info("Returning cached classification result")
+                    return cached_result
             
             # Perform actual classification (would call your AI model)
             # This is where you'd integrate with your PyTorch model
@@ -296,26 +331,29 @@ class DatabaseManager:
             }
             
             # Cache the result
-            redis_manager.cache_waste_classification(image_hash, classification_result)
+            if redis_manager:
+                redis_manager.cache_waste_classification(image_hash, classification_result)
             
             # Store in MongoDB for user history
             if user_id:
-                mongo_manager = self.managers['mongodb']
-                mongo_manager.store_waste_image(
-                    image_bytes, 
-                    f"waste_{image_hash}.jpg",
-                    {'classification_result': classification_result, 'user_id': user_id}
-                )
+                mongo_manager = self.managers.get('mongodb')
+                if mongo_manager:
+                    mongo_manager.store_waste_image(
+                        image_bytes, 
+                        f"waste_{image_hash}.jpg",
+                        {'classification_result': classification_result, 'user_id': user_id}
+                    )
             
             # Record analytics in Cassandra
-            cassandra_manager = self.managers['cassandra']
-            cassandra_manager.record_analytics_metric(
-                metric_name='ai_classifications',
-                timestamp=datetime.utcnow(),
-                dimension1='success',
-                dimension2='plastic_metal',
-                value=1.0
-            )
+            cassandra_manager = self.managers.get('cassandra')
+            if cassandra_manager:
+                cassandra_manager.record_analytics_metric(
+                    metric_name='ai_classifications',
+                    timestamp=datetime.utcnow(),
+                    dimension1='success',
+                    dimension2='plastic_metal',
+                    value=1.0
+                )
             
             return classification_result
             
