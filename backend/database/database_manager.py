@@ -1,5 +1,6 @@
 from typing import Dict, Any, List, Optional
 import logging
+from datetime import datetime
 from .config import DATABASE_CONFIG
 from .neo4j_manager import Neo4jManager
 from .mongodb_manager import MongoDBManager
@@ -18,52 +19,67 @@ class DatabaseManager:
         """Initialize all database connections"""
         try:
             # Neo4j (Graph DB)
-            neo4j_config = DATABASE_CONFIG['neo4j']
-            self.managers['neo4j'] = Neo4jManager(
-                uri=neo4j_config['uri'],
-                username=neo4j_config['username'],
-                password=neo4j_config['password']
-            )
-            logger.info("Neo4j connection initialized")
+            try:
+                neo4j_config = DATABASE_CONFIG['neo4j']
+                self.managers['neo4j'] = Neo4jManager(
+                    uri=neo4j_config['uri'],
+                    username=neo4j_config['username'],
+                    password=neo4j_config['password']
+                )
+                logger.info("Neo4j connection initialized")
+            except Exception as e:
+                logger.warning(f"Neo4j connection failed: {e}")
             
             # MongoDB (Document DB)
-            mongo_config = DATABASE_CONFIG['mongodb']
-            self.managers['mongodb'] = MongoDBManager(
-                uri=mongo_config['uri'],
-                database=mongo_config['database']
-            )
-            logger.info("MongoDB connection initialized")
+            try:
+                mongo_config = DATABASE_CONFIG['mongodb']
+                self.managers['mongodb'] = MongoDBManager(
+                    uri=mongo_config['uri'],
+                    database=mongo_config['database']
+                )
+                logger.info("MongoDB connection initialized")
+            except Exception as e:
+                logger.warning(f"MongoDB connection failed: {e}")
             
             # Redis (Key-Value)
-            redis_config = DATABASE_CONFIG['redis']
-            self.managers['redis'] = RedisManager(
-                host=redis_config['host'],
-                port=redis_config['port'],
-                db=redis_config['db'],
-                password=redis_config['password']
-            )
-            logger.info("Redis connection initialized")
+            try:
+                redis_config = DATABASE_CONFIG['redis']
+                self.managers['redis'] = RedisManager(
+                    host=redis_config['host'],
+                    port=redis_config['port'],
+                    db=redis_config['db'],
+                    password=redis_config['password']
+                )
+                logger.info("Redis connection initialized")
+            except Exception as e:
+                logger.warning(f"Redis connection failed: {e}")
             
             # Cassandra (Column-Family)
-            cassandra_config = DATABASE_CONFIG['cassandra']
-            self.managers['cassandra'] = CassandraManager(
-                hosts=cassandra_config['hosts'],
-                keyspace=cassandra_config['keyspace'],
-                port=cassandra_config['port']
-            )
-            logger.info("Cassandra connection initialized")
+            try:
+                cassandra_config = DATABASE_CONFIG['cassandra']
+                self.managers['cassandra'] = CassandraManager(
+                    hosts=cassandra_config['hosts'],
+                    keyspace=cassandra_config['keyspace'],
+                    port=cassandra_config['port']
+                )
+                logger.info("Cassandra connection initialized")
+            except Exception as e:
+                logger.warning(f"Cassandra connection failed: {e}")
             
             # PostgreSQL (Relational)
-            postgres_config = DATABASE_CONFIG['postgresql']
-            self.managers['postgresql'] = PostgreSQLManager(
-                host=postgres_config['host'],
-                port=postgres_config['port'],
-                database=postgres_config['database'],
-                username=postgres_config['username'],
-                password=postgres_config['password']
-            )
-            logger.info("PostgreSQL connection initialized")
-            
+            try:
+                postgres_config = DATABASE_CONFIG['postgresql']
+                self.managers['postgresql'] = PostgreSQLManager(
+                    host=postgres_config['host'],
+                    port=postgres_config['port'],
+                    database=postgres_config['database'],
+                    username=postgres_config['username'],
+                    password=postgres_config['password']
+                )
+                logger.info("PostgreSQL connection initialized")
+            except Exception as e:
+                logger.warning(f"PostgreSQL connection failed: {e}")
+                
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")
             raise
@@ -96,7 +112,7 @@ class DatabaseManager:
             if 'user_id' in transaction_data:
                 mongo_manager = self.managers['mongodb']
                 mongo_manager.update_user(str(transaction_data['user_id']), {
-                    'last_transaction_at': 'current_timestamp()' # Simplified
+                    'last_transaction_at': datetime.utcnow()
                 })
             
             # Cassandra: Store analytics and audit logs
@@ -159,7 +175,7 @@ class DatabaseManager:
             cassandra_manager = self.managers['cassandra']
             cassandra_manager.record_analytics_metric(
                 metric_name='search_queries',
-                timestamp='current_timestamp()',
+                timestamp=datetime.utcnow(),
                 dimension1=query,
                 dimension2=location or 'global',
                 value=1.0
@@ -295,7 +311,7 @@ class DatabaseManager:
             cassandra_manager = self.managers['cassandra']
             cassandra_manager.record_analytics_metric(
                 metric_name='ai_classifications',
-                timestamp='current_timestamp()',
+                timestamp=datetime.utcnow(),
                 dimension1='success',
                 dimension2='plastic_metal',
                 value=1.0

@@ -25,5 +25,6 @@ dist-ssr
 
 backend/model.pth
 backend/.env.example
+backend/.env
 backend/database/__pycache__/
 *.pyc

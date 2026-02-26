@@ -3,7 +3,7 @@ from cassandra.auth import PlainTextAuthProvider
 from cassandra.query import SimpleStatement
 from typing import List, Dict, Any, Optional
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ class CassandraManager:
             resource_type text,
             resource_id uuid,
             details text,
-            PRIMARY KEY (timestamp, user_id, action)
+            PRIMARY KEY ((user_id, action), timestamp)
         ) WITH CLUSTERING ORDER BY (timestamp DESC)
         """
         self.session.execute(audit_table)
