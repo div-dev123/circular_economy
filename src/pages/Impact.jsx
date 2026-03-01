@@ -1,13 +1,49 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './Impact.css';
 
 const Impact = () => {
+  const [userStats, setUserStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Load user stats from localStorage (synced from backend)
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const userData = JSON.parse(localStorage.getItem('user') || '{}');
+        if (userData && userData.id) {
+          setUserStats({
+            classifications: userData.classifications_count || 0,
+            listings: userData.listings_count || 0,
+            waste_processed: parseFloat(userData.waste_processed_tons || 0).toFixed(2),
+            co2_saved: parseFloat(userData.co2_saved_tons || 0).toFixed(2),
+            cost_savings: parseFloat(userData.cost_savings || 0).toFixed(2),
+          });
+        }
+      }
+    } catch {
+      // localStorage not available
+    }
+    setLoading(false);
+  }, []);
+
+  const hasActivity = userStats && (
+    userStats.classifications > 0 ||
+    userStats.listings > 0 ||
+    parseFloat(userStats.waste_processed) > 0
+  );
+
+  if (loading) {
+    return <div className="loading">Loading your impact data...</div>;
+  }
+
   return (
     <div className="impact">
       <section className="impact-hero">
         <div className="container">
-          <h1>Impact Dashboard</h1>
-          <p className="subtitle">Real-time tracking of environmental and economic benefits</p>
+          <h1>Your Impact Dashboard</h1>
+          <p className="subtitle">Track your environmental and economic contributions</p>
         </div>
       </section>
 
@@ -15,299 +51,113 @@ const Impact = () => {
         <div className="container">
           <div className="metrics-grid">
             <div className="metric-card primary">
-              <div className="metric-icon">🌍</div>
+              <div className="metric-icon">📊</div>
               <div className="metric-content">
-                <div className="metric-value">2.3B</div>
-                <div className="metric-label">Tons CO₂ Saved</div>
-                <div className="metric-trend positive">+12% from last month</div>
+                <div className="metric-value">{userStats?.classifications || 0}</div>
+                <div className="metric-label">Waste Classifications</div>
               </div>
             </div>
-            
+
             <div className="metric-card primary">
+              <div className="metric-icon">🏷️</div>
+              <div className="metric-content">
+                <div className="metric-value">{userStats?.listings || 0}</div>
+                <div className="metric-label">Marketplace Listings</div>
+              </div>
+            </div>
+
+            <div className="metric-card secondary">
               <div className="metric-icon">🗑️</div>
               <div className="metric-content">
-                <div className="metric-value">10M+</div>
-                <div className="metric-label">Tons Waste Diverted</div>
-                <div className="metric-trend positive">+8% from last month</div>
+                <div className="metric-value">{userStats?.waste_processed || '0.00'} tons</div>
+                <div className="metric-label">Waste Processed</div>
               </div>
             </div>
-            
+
             <div className="metric-card secondary">
-              <div className="metric-icon">💰</div>
+              <div className="metric-icon">🌍</div>
               <div className="metric-content">
-                <div className="metric-value">$1.8B</div>
-                <div className="metric-label">Cost Savings Generated</div>
-                <div className="metric-trend positive">+15% from last month</div>
-              </div>
-            </div>
-            
-            <div className="metric-card secondary">
-              <div className="metric-icon">🏭</div>
-              <div className="metric-content">
-                <div className="metric-value">500+</div>
-                <div className="metric-label">Business Partners</div>
-                <div className="metric-trend positive">+25 new this month</div>
+                <div className="metric-value">{userStats?.co2_saved || '0.00'} tons</div>
+                <div className="metric-label">CO₂ Saved</div>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="charts-section">
-        <div className="container">
-          <div className="section-header">
-            <h2>Environmental Impact Over Time</h2>
-            <p>Detailed analytics showing our collective progress</p>
-          </div>
-          
-          <div className="charts-grid">
-            <div className="chart-card">
-              <div className="chart-header">
-                <h3>Monthly CO₂ Reduction</h3>
-                <div className="chart-controls">
-                  <button className="time-filter active">6M</button>
-                  <button className="time-filter">1Y</button>
-                  <button className="time-filter">All</button>
-                </div>
-              </div>
-              <div className="chart-container">
-                <div className="line-chart">
-                  <div className="chart-grid"></div>
-                  <div className="chart-line" style={{height: '200px'}}>
-                    <div className="data-point" style={{left: '10%', bottom: '30%'}}></div>
-                    <div className="data-point" style={{left: '25%', bottom: '45%'}}></div>
-                    <div className="data-point" style={{left: '40%', bottom: '55%'}}></div>
-                    <div className="data-point" style={{left: '55%', bottom: '65%'}}></div>
-                    <div className="data-point" style={{left: '70%', bottom: '75%'}}></div>
-                    <div className="data-point" style={{left: '85%', bottom: '80%'}}></div>
-                  </div>
-                </div>
-                <div className="chart-stats">
-                  <div className="stat">
-                    <span className="stat-label">Current Rate</span>
-                    <span className="stat-value">38M tons/month</span>
-                  </div>
-                  <div className="stat">
-                    <span className="stat-label">Target</span>
-                    <span className="stat-value">50M tons/month</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="chart-card">
-              <div className="chart-header">
-                <h3>Waste Type Distribution</h3>
-              </div>
-              <div className="chart-container">
-                <div className="pie-chart">
-                  <div className="pie-slice" style={{background: 'conic-gradient(#2d5a3d 0% 40%, #3a7d44 40% 65%, #1a2e1f 65% 85%, #a8d5ba 85% 100%)'}}></div>
-                  <div className="pie-center">
-                    <div className="center-value">100%</div>
-                    <div className="center-label">Total Diverted</div>
-                  </div>
-                </div>
-                <div className="chart-legend">
-                  <div className="legend-item">
-                    <div className="legend-color" style={{backgroundColor: '#2d5a3d'}}></div>
-                    <div className="legend-text">
-                      <span className="legend-label">Plastic</span>
-                      <span className="legend-percent">40%</span>
-                    </div>
-                  </div>
-                  <div className="legend-item">
-                    <div className="legend-color" style={{backgroundColor: '#3a7d44'}}></div>
-                    <div className="legend-text">
-                      <span className="legend-label">Metal</span>
-                      <span className="legend-percent">25%</span>
-                    </div>
-                  </div>
-                  <div className="legend-item">
-                    <div className="legend-color" style={{backgroundColor: '#1a2e1f'}}></div>
-                    <div className="legend-text">
-                      <span className="legend-label">Organic</span>
-                      <span className="legend-percent">20%</span>
-                    </div>
-                  </div>
-                  <div className="legend-item">
-                    <div className="legend-color" style={{backgroundColor: '#a8d5ba'}}></div>
-                    <div className="legend-text">
-                      <span className="legend-label">Other</span>
-                      <span className="legend-percent">15%</span>
-                    </div>
-                  </div>
-                </div>
+      {!hasActivity ? (
+        <section className="empty-activity-section">
+          <div className="container">
+            <div className="empty-activity">
+              <div className="empty-icon">🌱</div>
+              <h2>Start Making an Impact</h2>
+              <p>You haven't recorded any activity yet. Begin by classifying waste or creating a marketplace listing to start tracking your environmental contributions.</p>
+              <div className="empty-actions">
+                <button className="btn btn-primary" onClick={() => navigate('/classify')}>
+                  Classify Waste
+                </button>
+                <button className="btn btn-outline" onClick={() => navigate('/marketplace')}>
+                  View Marketplace
+                </button>
               </div>
             </div>
           </div>
-        </div>
-      </section>
-
-      <section className="regional-section">
-        <div className="container">
-          <div className="section-header">
-            <h2>Regional Impact</h2>
-            <p>See how different regions are contributing to the circular economy</p>
-          </div>
-          
-          <div className="regional-grid">
-            <div className="region-card">
-              <div className="region-header">
-                <h3>North America</h3>
-                <div className="region-flag">🇺🇸</div>
-              </div>
-              <div className="region-stats">
-                <div className="stat-item">
-                  <span className="stat-icon">🏭</span>
-                  <div className="stat-content">
-                    <span className="stat-value">150+</span>
-                    <span className="stat-label">Facilities</span>
-                  </div>
-                </div>
-                <div className="stat-item">
-                  <span className="stat-icon">🌍</span>
-                  <div className="stat-content">
-                    <span className="stat-value">850M</span>
-                    <span className="stat-label">Tons CO₂ Saved</span>
-                  </div>
-                </div>
-                <div className="stat-item">
-                  <span className="stat-icon">💰</span>
-                  <div className="stat-content">
-                    <span className="stat-value">$650M</span>
-                    <span className="stat-label">Cost Savings</span>
-                  </div>
-                </div>
-              </div>
+        </section>
+      ) : (
+        <section className="activity-section">
+          <div className="container">
+            <div className="section-header">
+              <h2>Your Activity Summary</h2>
+              <p>Your contributions to the circular economy</p>
             </div>
-            
-            <div className="region-card">
-              <div className="region-header">
-                <h3>Europe</h3>
-                <div className="region-flag">🇪🇺</div>
-              </div>
-              <div className="region-stats">
-                <div className="stat-item">
-                  <span className="stat-icon">🏭</span>
-                  <div className="stat-content">
-                    <span className="stat-value">120+</span>
-                    <span className="stat-label">Facilities</span>
-                  </div>
-                </div>
-                <div className="stat-item">
-                  <span className="stat-icon">🌍</span>
-                  <div className="stat-content">
-                    <span className="stat-value">620M</span>
-                    <span className="stat-label">Tons CO₂ Saved</span>
-                  </div>
-                </div>
-                <div className="stat-item">
-                  <span className="stat-icon">💰</span>
-                  <div className="stat-content">
-                    <span className="stat-value">480M</span>
-                    <span className="stat-label">Cost Savings</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="region-card">
-              <div className="region-header">
-                <h3>Asia-Pacific</h3>
-                <div className="region-flag">🌏</div>
-              </div>
-              <div className="region-stats">
-                <div className="stat-item">
-                  <span className="stat-icon">🏭</span>
-                  <div className="stat-content">
-                    <span className="stat-value">230+</span>
-                    <span className="stat-label">Facilities</span>
-                  </div>
-                </div>
-                <div className="stat-item">
-                  <span className="stat-icon">🌍</span>
-                  <div className="stat-content">
-                    <span className="stat-value">830M</span>
-                    <span className="stat-label">Tons CO₂ Saved</span>
-                  </div>
-                </div>
-                <div className="stat-item">
-                  <span className="stat-icon">💰</span>
-                  <div className="stat-content">
-                    <span className="stat-value">670M</span>
-                    <span className="stat-label">Cost Savings</span>
-                  </div>
-                </div>
+            <div className="activity-summary">
+              <div className="summary-card">
+                <h3>💰 Cost Savings</h3>
+                <p className="summary-value">₹{userStats?.cost_savings || '0.00'}</p>
+                <p className="summary-desc">Estimated savings from waste diversion</p>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <section className="sustainability-section">
         <div className="container">
-          <div className="sustainability-content">
-            <div className="sustainability-text">
-              <h2>Our Sustainability Commitment</h2>
-              <p>We're not just tracking impact - we're actively working to accelerate the transition to a circular economy</p>
-              
-              <div className="commitments">
-                <div className="commitment">
-                  <div className="commitment-icon">🎯</div>
-                  <div className="commitment-content">
-                    <h4>Science-Based Targets</h4>
-                    <p>Aligned with 1.5°C climate goals and UN Sustainable Development Goals</p>
-                  </div>
-                </div>
-                
-                <div className="commitment">
-                  <div className="commitment-icon">🤝</div>
-                  <div className="commitment-content">
-                    <h4>Partnership Approach</h4>
-                    <p>Collaborating with governments, NGOs, and industry leaders</p>
-                  </div>
-                </div>
-                
-                <div className="commitment">
-                  <div className="commitment-icon">🔬</div>
-                  <div className="commitment-content">
-                    <h4>Continuous Innovation</h4>
-                    <p>Investing in research and development of new circular solutions</p>
-                  </div>
-                </div>
+          <div className="section-header">
+            <h2>How You Can Contribute</h2>
+            <p>Every action counts towards building a sustainable future</p>
+          </div>
+
+          <div className="commitments-grid">
+            <div className="commitment">
+              <div className="commitment-icon">📸</div>
+              <div className="commitment-content">
+                <h4>Classify Your Waste</h4>
+                <p>Use AI-powered classification to identify waste types and find the best recycling options</p>
               </div>
             </div>
-            
-            <div className="sustainability-visual">
-              <div className="impact-tree">
-                <div className="tree-trunk">
-                  <div className="trunk-section">
-                    <div className="section-label">Foundation</div>
-                    <div className="section-value">Data Collection</div>
-                  </div>
-                  <div className="trunk-section">
-                    <div className="section-label">Process</div>
-                    <div className="section-value">AI Classification</div>
-                  </div>
-                  <div className="trunk-section">
-                    <div className="section-label">Connection</div>
-                    <div className="section-value">Smart Matching</div>
-                  </div>
-                </div>
-                <div className="tree-branches">
-                  <div className="branch">
-                    <div className="branch-icon">🌍</div>
-                    <div className="branch-label">Environmental Impact</div>
-                  </div>
-                  <div className="branch">
-                    <div className="branch-icon">💰</div>
-                    <div className="branch-label">Economic Benefits</div>
-                  </div>
-                  <div className="branch">
-                    <div className="branch-icon">🤝</div>
-                    <div className="branch-label">Social Value</div>
-                  </div>
-                </div>
+
+            <div className="commitment">
+              <div className="commitment-icon">🏷️</div>
+              <div className="commitment-content">
+                <h4>List on Marketplace</h4>
+                <p>Turn your waste into someone else's resource by listing materials on the marketplace</p>
+              </div>
+            </div>
+
+            <div className="commitment">
+              <div className="commitment-icon">🤝</div>
+              <div className="commitment-content">
+                <h4>Connect with Partners</h4>
+                <p>Find businesses that can use your waste materials in their production processes</p>
+              </div>
+            </div>
+
+            <div className="commitment">
+              <div className="commitment-icon">📊</div>
+              <div className="commitment-content">
+                <h4>Track Your Progress</h4>
+                <p>Monitor your environmental impact and see how your contributions grow over time</p>
               </div>
             </div>
           </div>
@@ -317,11 +167,15 @@ const Impact = () => {
       <section className="cta-section">
         <div className="container">
           <div className="cta-content">
-            <h2>Join the Movement</h2>
-            <p>Be part of the solution to global waste challenges</p>
+            <h2>Ready to Make a Difference?</h2>
+            <p>Every piece of waste classified and diverted brings us closer to a circular economy</p>
             <div className="cta-buttons">
-              <button className="btn btn-primary btn-large">Get Started</button>
-              <button className="btn btn-secondary btn-large">View Case Studies</button>
+              <button className="btn btn-primary btn-large" onClick={() => navigate('/classify')}>
+                Start Classifying
+              </button>
+              <button className="btn btn-secondary btn-large" onClick={() => navigate('/marketplace')}>
+                Browse Marketplace
+              </button>
             </div>
           </div>
         </div>

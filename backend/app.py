@@ -64,6 +64,8 @@ CLASS_META = {
 }
 
 DEVICE = torch.device('cpu')  # Using CPU for now
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, 'model.pth')
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
@@ -71,7 +73,7 @@ CORS(app)  # Enable CORS for React frontend
 def load_model():
     try:
         # Load checkpoint
-        checkpoint = torch.load('model.pth', map_location=DEVICE)
+        checkpoint = torch.load(MODEL_PATH, map_location=DEVICE)
         print(f"✅ Model checkpoint loaded - epoch: {checkpoint['epoch']}, val mAP: {checkpoint['val_mAP']:.4f}")
         
         # Initialize correct model architecture
@@ -275,44 +277,22 @@ def classify_waste():
         estimated_value = get_estimated_value(primary_type.replace("/", "_"))
         environmental_impact = get_environmental_impact(primary_type.replace("/", "_"))
         
-        # Use database manager for enhanced functionality
+        # Build response
+        response_data = {
+            "wasteTypes": results,
+            "potentialUses": potential_uses,
+            "estimatedValue": estimated_value,
+            "environmentalImpact": environmental_impact
+        }
+
+        # Lightweight analytics recording (non-blocking, won't spam logs)
         if DATABASE_AVAILABLE:
             try:
-                # Get supply chain insights
-                insights = db_manager.get_supply_chain_insights(primary_type.upper())
-                
-                # Record the classification in analytics
-                db_manager.classify_waste_with_caching(
-                    image_hash=str(hash(image_bytes)),
-                    image_bytes=image_bytes,
-                    user_id=request.form.get('user_id')  # Optional
-                )
-                
-                # Add insights to response
-                response_data = {
-                    "wasteTypes": results,
-                    "potentialUses": potential_uses,
-                    "estimatedValue": estimated_value,
-                    "environmentalImpact": environmental_impact,
-                    "supplyChainInsights": insights
-                }
-            except Exception as e:
-                print(f"Database integration error: {e}")
-                # Fallback to basic response
-                response_data = {
-                    "wasteTypes": results,
-                    "potentialUses": potential_uses,
-                    "estimatedValue": estimated_value,
-                    "environmentalImpact": environmental_impact
-                }
-        else:
-            # Basic response without database integration
-            response_data = {
-                "wasteTypes": results,
-                "potentialUses": potential_uses,
-                "estimatedValue": estimated_value,
-                "environmentalImpact": environmental_impact
-            }
+                redis_mgr = db_manager.get_manager('redis')
+                if redis_mgr:
+                    redis_mgr.client.incr(f'classifications:{primary_type}')
+            except Exception:
+                pass  # Analytics failure should never affect classification
         
         print("✅ Classification successful")
         return jsonify(response_data)
@@ -463,5 +443,145 @@ def get_environmental_impact(waste_type):
         "energyRecovered": "600 kWh"
     })
 
+@app.route('/api/match-companies', methods=['GET'])
+def match_companies():
+    """Find companies whose industry can process a given waste type"""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 501
+
+    waste_type = request.args.get('waste_type', '')
+    exclude_user_id = request.args.get('exclude_user_id', type=int)
+
+    if not waste_type:
+        return jsonify({'error': 'waste_type parameter is required'}), 400
+
+    try:
+        postgres_manager = db_manager.get_manager('postgresql')
+        if not postgres_manager:
+            return jsonify({'error': 'PostgreSQL not available'}), 501
+
+        matches = postgres_manager.get_matching_companies(waste_type, exclude_user_id)
+        return jsonify({
+            'waste_type': waste_type,
+            'matches': matches,
+            'total': len(matches)
+        })
+    except Exception as e:
+        logger.error(f"Match companies error: {e}")
+        return jsonify({'error': 'Failed to find matching companies'}), 500
+
+# Authentication Routes
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database integration not available'}), 501
+    
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ['email', 'password', 'company_name', 'industry_type']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({'error': f'{field} is required'}), 400
+        
+        # Additional validation
+        if len(data['password']) < 6:
+            return jsonify({'error': 'Password must be at least 6 characters'}), 400
+        
+        if '@' not in data['email']:
+            return jsonify({'error': 'Invalid email format'}), 400
+        
+        # Prepare user data
+        user_data = {
+            'email': data['email'],
+            'password': data['password'],
+            'company_name': data['company_name'],
+            'industry_type': data['industry_type'],
+            'location': data.get('location', ''),
+            'phone': data.get('phone', '')
+        }
+        
+        # Register user
+        result = db_manager.register_user(user_data)
+        
+        if 'error' in result:
+            return jsonify(result), 400
+        
+        return jsonify(result), 201
+        
+    except Exception as e:
+        logger.error(f"Registration error: {e}")
+        return jsonify({'error': 'Registration failed'}), 500
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database integration not available'}), 501
+    
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data.get('email') or not data.get('password'):
+            return jsonify({'error': 'Email and password are required'}), 400
+        
+        # Authenticate user
+        result = db_manager.authenticate_user(data['email'], data['password'])
+        
+        if result.get('success'):
+            # In a real application, you would generate a JWT token here
+            # For now, we'll return the user data
+            response_data = {
+                'success': True,
+                'user': result['user'],
+                'message': 'Login successful'
+            }
+            return jsonify(response_data), 200
+        else:
+            return jsonify(result), 401
+        
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        return jsonify({'error': 'Login failed'}), 500
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    # In a real application, you would invalidate the JWT token here
+    return jsonify({'message': 'Logged out successfully'}), 200
+
+@app.route('/api/auth/profile', methods=['PUT'])
+def update_profile():
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database integration not available'}), 501
+    
+    try:
+        data = request.get_json()
+        user_id = data.get('id')
+        
+        if not user_id:
+            return jsonify({'error': 'User ID is required'}), 400
+        
+        # Update user profile
+        postgres_manager = db_manager.get_manager('postgresql')
+        if postgres_manager:
+            postgres_manager.update_user(user_id, data)
+            user = postgres_manager.get_user_by_id(user_id)
+            
+            if user:
+                return jsonify({
+                    'success': True,
+                    'user': user,
+                    'message': 'Profile updated successfully'
+                }), 200
+            else:
+                return jsonify({'error': 'User not found'}), 404
+        else:
+            return jsonify({'error': 'Database not available'}), 501
+        
+    except Exception as e:
+        logger.error(f"Profile update error: {e}")
+        return jsonify({'error': 'Profile update failed'}), 500
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    app.run(host='0.0.0.0', port=5002, debug=True)

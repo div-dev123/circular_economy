@@ -29,6 +29,7 @@ class DatabaseManager:
                 logger.info("Neo4j connection initialized")
             except Exception as e:
                 logger.warning(f"Neo4j connection failed: {e}")
+                logger.info("If this is your first time using Neo4j, run: python setup_neo4j_password.py")
             
             # MongoDB (Document DB)
             try:
@@ -40,6 +41,7 @@ class DatabaseManager:
                 logger.info("MongoDB connection initialized")
             except Exception as e:
                 logger.warning(f"MongoDB connection failed: {e}")
+                logger.info("Make sure MongoDB is running. You can start it with: docker-compose up mongodb")
             
             # Redis (Key-Value)
             try:
@@ -53,6 +55,7 @@ class DatabaseManager:
                 logger.info("Redis connection initialized")
             except Exception as e:
                 logger.warning(f"Redis connection failed: {e}")
+                logger.info("Make sure Redis is running. You can start it with: docker-compose up redis")
             
             # Cassandra (Column-Family)
             try:
@@ -65,6 +68,7 @@ class DatabaseManager:
                 logger.info("Cassandra connection initialized")
             except Exception as e:
                 logger.warning(f"Cassandra connection failed: {e}")
+                logger.info("Make sure Cassandra is running. You can start it with: docker-compose up cassandra")
             
             # PostgreSQL (Relational)
             try:
@@ -79,6 +83,7 @@ class DatabaseManager:
                 logger.info("PostgreSQL connection initialized")
             except Exception as e:
                 logger.warning(f"PostgreSQL connection failed: {e}")
+                logger.info("Make sure PostgreSQL is running. You can start it with: docker-compose up postgresql")
                 
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")
@@ -360,6 +365,102 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error in waste classification: {e}")
             return {}
+    
+    def register_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Register a new user with password"""
+        try:
+            postgres_manager = self.managers.get('postgresql')
+            if not postgres_manager:
+                return {'error': 'Database not available'}
+            
+            # Check if user already exists
+            existing_user = postgres_manager.get_user_by_email(user_data['email'])
+            if existing_user:
+                return {'error': 'Email already registered'}
+            
+            # Create user with password
+            user_id = postgres_manager.create_user_with_password(user_data)
+            
+            # Get the full user object
+            user = postgres_manager.get_user_by_id(user_id)
+            
+            # Optionally create corresponding entries in other databases
+            # For example, create user profile in MongoDB
+            mongo_manager = self.managers.get('mongodb')
+            if mongo_manager:
+                mongo_manager.create_user_profile({
+                    'user_id': user_id,
+                    'email': user_data['email'],
+                    'company_name': user_data.get('company_name', ''),
+                    'industry_type': user_data.get('industry_type', ''),
+                    'location': user_data.get('location', ''),
+                    'created_at': datetime.utcnow()
+                })
+            
+            # Log the registration in Cassandra
+            cassandra_manager = self.managers.get('cassandra')
+            if cassandra_manager:
+                cassandra_manager.record_analytics_metric(
+                    metric_name='user_registrations',
+                    timestamp=datetime.utcnow(),
+                    dimension1=user_data.get('industry_type', 'unknown'),
+                    dimension2='success',
+                    value=1.0
+                )
+            
+            return {'success': True, 'user_id': user_id, 'user': user}
+        except Exception as e:
+            logger.error(f"Error registering user: {e}")
+            return {'error': str(e)}
+    
+    def authenticate_user(self, email: str, password: str) -> Dict[str, Any]:
+        """Authenticate user with email and password"""
+        try:
+            postgres_manager = self.managers.get('postgresql')
+            if not postgres_manager:
+                return {'error': 'Database not available'}
+            
+            user = postgres_manager.authenticate_user(email, password)
+            
+            if user:
+                # Update last login in MongoDB if available
+                mongo_manager = self.managers.get('mongodb')
+                if mongo_manager:
+                    try:
+                        mongo_manager.update_user(str(user['id']), {
+                            'last_login_at': datetime.utcnow()
+                        })
+                    except Exception:
+                        pass  # Continue even if MongoDB update fails
+                
+                # Log the login in Cassandra
+                cassandra_manager = self.managers.get('cassandra')
+                if cassandra_manager:
+                    cassandra_manager.record_analytics_metric(
+                        metric_name='user_logins',
+                        timestamp=datetime.utcnow(),
+                        dimension1=user.get('industry_type', 'unknown'),
+                        dimension2='success',
+                        value=1.0
+                    )
+                
+                return {'success': True, 'user': user}
+            else:
+                # Log failed login attempt
+                cassandra_manager = self.managers.get('cassandra')
+                if cassandra_manager:
+                    cassandra_manager.record_analytics_metric(
+                        metric_name='failed_logins',
+                        timestamp=datetime.utcnow(),
+                        dimension1=email.split('@')[1] if '@' in email else 'unknown',
+                        dimension2='authentication_failed',
+                        value=1.0
+                    )
+                
+                return {'success': False, 'error': 'Invalid credentials'}
+        except Exception as e:
+            logger.error(f"Error authenticating user: {e}")
+            return {'error': str(e)}
 
 # Global database manager instance
 db_manager = DatabaseManager()

@@ -131,14 +131,15 @@ class CassandraManager:
         query = """
         SELECT * FROM transactions 
         WHERE user_id = ? 
-        ORDER BY created_at DESC 
-        LIMIT ?
+        LIMIT ? ALLOW FILTERING
         """
-        
-        statement = self.session.prepare(query)
-        rows = self.session.execute(statement, [uuid.UUID(user_id), limit])
-        
-        return [dict(row) for row in rows]
+        try:
+            statement = self.session.prepare(query)
+            rows = self.session.execute(statement, [uuid.UUID(user_id), limit])
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.warning(f"Error getting transaction history: {e}")
+            return []
     
     def get_transaction_by_id(self, transaction_id: str) -> Optional[Dict]:
         """Get specific transaction"""
@@ -164,40 +165,48 @@ class CassandraManager:
     
     def get_co2_savings_by_month(self, year: int, month: int) -> float:
         """Get CO2 savings for specific month"""
-        query = """
-        SELECT SUM(value) as total_co2_saved
-        FROM environmental_impact
-        WHERE date >= ? AND date < ? AND metric_type = 'co2_savings'
-        """
-        
-        start_date = datetime(year, month, 1)
-        if month == 12:
-            end_date = datetime(year + 1, 1, 1)
-        else:
-            end_date = datetime(year, month + 1, 1)
-        
-        statement = self.session.prepare(query)
-        result = self.session.execute(statement, [start_date.date(), end_date.date()]).one()
-        
-        return result.total_co2_saved if result and result.total_co2_saved else 0.0
+        try:
+            query = """
+            SELECT SUM(value) as total_co2_saved
+            FROM environmental_impact
+            WHERE metric_type = 'co2_savings'
+              AND date >= ? AND date < ?
+            ALLOW FILTERING
+            """
+
+            start_date = datetime(year, month, 1)
+            if month == 12:
+                end_date = datetime(year + 1, 1, 1)
+            else:
+                end_date = datetime(year, month + 1, 1)
+
+            statement = self.session.prepare(query)
+            result = self.session.execute(statement, [start_date.date(), end_date.date()]).one()
+            return result.total_co2_saved if result and result.total_co2_saved else 0.0
+        except Exception as e:
+            logger.warning(f"Error getting CO2 savings: {e}")
+            return 0.0
     
     def get_waste_diversion_trends(self, days: int = 30) -> List[Dict]:
         """Get waste diversion trends over time"""
-        end_date = datetime.utcnow().date()
-        start_date = datetime.utcnow().date() - timedelta(days=days)
-        
-        query = """
-        SELECT date, waste_type, SUM(value) as total_diverted
-        FROM environmental_impact
-        WHERE date >= ? AND date <= ? AND metric_type = 'waste_diverted'
-        GROUP BY date, waste_type
-        ORDER BY date DESC
-        """
-        
-        statement = self.session.prepare(query)
-        rows = self.session.execute(statement, [start_date, end_date])
-        
-        return [dict(row) for row in rows]
+        try:
+            end_date = datetime.utcnow().date()
+            start_date = datetime.utcnow().date() - timedelta(days=days)
+
+            query = """
+            SELECT date, waste_type, value
+            FROM environmental_impact
+            WHERE metric_type = 'waste_diverted'
+              AND date >= ? AND date <= ?
+            ALLOW FILTERING
+            """
+
+            statement = self.session.prepare(query)
+            rows = self.session.execute(statement, [start_date, end_date])
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.warning(f"Error getting waste diversion trends: {e}")
+            return []
     
     # Audit Logging
     def log_audit_event(self, user_id: str, action: str, resource_type: str, 

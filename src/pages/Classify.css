@@ -382,3 +382,129 @@
     gap: 2rem;
   }
 }
+
+.error-message {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 1rem 1.5rem;
+  margin-top: 1rem;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* Matched Companies */
+.matched-companies {
+  margin-top: 2.5rem;
+  padding-top: 2rem;
+  border-top: 2px solid #e9ecef;
+}
+
+.matched-companies h3 {
+  color: #2d5a3d;
+  margin-bottom: 0.5rem;
+  font-size: 1.4rem;
+}
+
+.match-subtitle {
+  color: #666;
+  margin-bottom: 1.5rem;
+  font-size: 1rem;
+}
+
+.companies-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.company-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: #f8f9fa;
+  padding: 1.2rem 1.5rem;
+  border-radius: 12px;
+  border: 1px solid #e9ecef;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.company-card:hover {
+  box-shadow: 0 4px 12px rgba(45, 90, 61, 0.1);
+  border-color: #2d5a3d;
+}
+
+.company-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2d5a3d, #3a7d44);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.company-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.company-info h4 {
+  margin: 0;
+  color: #333;
+  font-size: 1rem;
+}
+
+.company-industry {
+  display: inline-block;
+  background: #d4edda;
+  color: #155724;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.15rem 0.6rem;
+  border-radius: 12px;
+  width: fit-content;
+}
+
+.company-location {
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.btn-small {
+  padding: 0.4rem 1rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.match-note {
+  text-align: center;
+  color: #888;
+  font-size: 0.9rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 768px) {
+  .company-card {
+    flex-direction: column;
+    text-align: center;
+    gap: 0.8rem;
+  }
+
+  .company-info {
+    align-items: center;
+  }
+
+  .btn-small {
+    width: 100%;
+    text-align: center;
+  }
+}

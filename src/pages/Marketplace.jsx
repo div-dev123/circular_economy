@@ -4,81 +4,28 @@ import './Marketplace.css';
 const Marketplace = () => {
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [wasteListings, setWasteListings] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  const wasteListings = [
-    {
-      id: 1,
-      title: "Industrial Plastic Waste",
-      type: "plastic",
-      quantity: "500 tons",
-      location: "Chicago, IL",
-      price: "$150/ton",
-      description: "High-density polyethylene from manufacturing process",
-      company: "Plastic Manufacturing Co.",
-      posted: "2 days ago",
-      image: "📦"
-    },
-    {
-      id: 2,
-      title: "Textile Scraps",
-      type: "textile",
-      quantity: "200 tons",
-      location: "Los Angeles, CA",
-      price: "$80/ton",
-      description: "Cotton and polyester fabric remnants from apparel production",
-      company: "Fashion Industries Ltd.",
-      posted: "1 day ago",
-      image: "👕"
-    },
-    {
-      id: 3,
-      title: "Metal Shavings",
-      type: "metal",
-      quantity: "150 tons",
-      location: "Detroit, MI",
-      price: "$200/ton",
-      description: "Steel and aluminum machining waste from automotive parts",
-      company: "Auto Parts Manufacturing",
-      posted: "3 days ago",
-      image: "⚙️"
-    },
-    {
-      id: 4,
-      title: "Food Processing Waste",
-      type: "organic",
-      quantity: "50 tons",
-      location: "Portland, OR",
-      price: "$50/ton",
-      description: "Organic waste from food processing facility, suitable for composting",
-      company: "Pacific Food Processors",
-      posted: "1 week ago",
-      image: "🍎"
-    },
-    {
-      id: 5,
-      title: "Construction Debris",
-      type: "construction",
-      quantity: "1000 tons",
-      location: "Austin, TX",
-      price: "$75/ton",
-      description: "Concrete and masonry materials from construction site",
-      company: "Texas Construction Group",
-      posted: "5 days ago",
-      image: "🏗️"
-    },
-    {
-      id: 6,
-      title: "Electronic Components",
-      type: "electronic",
-      quantity: "50 tons",
-      location: "San Jose, CA",
-      price: "$300/ton",
-      description: "Recyclable electronic components and circuit boards",
-      company: "Tech Electronics Inc.",
-      posted: "4 days ago",
-      image: "💻"
-    }
-  ];
+  // Authentication is now handled by ProtectedRoute
+
+  // In a real application, fetch listings from the backend
+  // useEffect(() => {
+  //   fetchListings();
+  // }, []);
+
+  // const fetchListings = async () => {
+  //   setLoading(true);
+  //   try {
+  //     const response = await fetch('/api/search');
+  //     const data = await response.json();
+  //     setWasteListings(data.results || []);
+  //   } catch (error) {
+  //     console.error('Error fetching listings:', error);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
 
   const filters = [
     { id: 'all', label: 'All Waste Types', icon: '🗑️' },
@@ -179,8 +126,8 @@ const Marketplace = () => {
           {filteredListings.length === 0 && (
             <div className="no-results">
               <div className="no-results-icon">🔍</div>
-              <h3>No listings found</h3>
-              <p>Try adjusting your search or filter criteria</p>
+              <h3>No listings yet</h3>
+              <p>Be the first to list your waste materials on the marketplace!</p>
             </div>
           )}
         </div>

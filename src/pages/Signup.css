@@ -1,0 +1,139 @@
+.signup {
+  margin-top: 80px;
+}
+
+.signup-hero {
+  background: linear-gradient(135deg, #2d5a3d 0%, #3a7d44 100%);
+  color: white;
+  padding: 4rem 0;
+  text-align: center;
+}
+
+.signup-hero h1 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.signup-hero .subtitle {
+  font-size: 1.1rem;
+  opacity: 0.9;
+}
+
+.signup-content {
+  padding: 3rem 0;
+  background: #f8f9fa;
+}
+
+.signup-form-container {
+  max-width: 700px;
+  margin: 0 auto;
+  background: white;
+  padding: 3rem;
+  border-radius: 15px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.signup-form .error-message {
+  background: #fee;
+  color: #c33;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  border-left: 4px solid #c33;
+}
+
+.form-row {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.form-row .form-group {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 0.8rem 1rem;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: border-color 0.3s ease;
+  box-sizing: border-box;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #2d5a3d;
+}
+
+.terms {
+  margin-top: 1rem;
+}
+
+.terms label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-weight: normal;
+}
+
+.signup-form button[type="submit"] {
+  width: 100%;
+  margin-top: 2rem;
+}
+
+.signup-links {
+  text-align: center;
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid #eee;
+}
+
+.signup-links a {
+  color: #2d5a3d;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.signup-links a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .signup {
+    margin-top: 60px;
+  }
+  
+  .signup-hero {
+    padding: 2rem 0;
+  }
+  
+  .signup-hero h1 {
+    font-size: 2rem;
+  }
+  
+  .form-row {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .signup-form-container {
+    margin: 0 1rem;
+    padding: 2rem;
+  }
+}

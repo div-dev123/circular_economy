@@ -2,6 +2,11 @@ from neo4j import GraphDatabase
 from neo4j.exceptions import AuthError, ServiceUnavailable
 from typing import List, Dict, Any
 import logging
+import warnings
+
+# Suppress Neo4j driver notification warnings for missing labels/properties
+warnings.filterwarnings('ignore', message='.*neo4j.*')
+logging.getLogger('neo4j').setLevel(logging.ERROR)
 
 logger = logging.getLogger(__name__)
 
@@ -82,10 +87,23 @@ class Neo4jManager:
             session.run(query, waste_id=waste_id, industry_id=industry_id,
                        relationship_type=relationship_type, distance=distance, cost=cost)
     
+    def _has_graph_data(self) -> bool:
+        """Check whether the graph DB has any Waste or Industry nodes"""
+        try:
+            with self.driver.session() as session:
+                result = session.run("MATCH (n) WHERE n:Waste OR n:Industry RETURN count(n) AS cnt LIMIT 1")
+                record = result.single()
+                return record and record['cnt'] > 0
+        except Exception:
+            return False
+
     def find_industries_for_waste(self, waste_type: str, location: str = None, 
                                 max_distance: float = 100) -> List[Dict]:
         """Find all industries that can use specific waste type"""
         try:
+            if not self._has_graph_data():
+                return []
+
             query = """
             MATCH (w:Waste {type: $waste_type})
             MATCH (i:Industry)
@@ -132,6 +150,9 @@ class Neo4jManager:
     def get_circular_economy_pathways(self, waste_type: str) -> List[Dict]:
         """Find circular economy pathways for waste type"""
         try:
+            if not self._has_graph_data():
+                return []
+
             query = """
             MATCH (w:Waste {type: $waste_type})-[:SUPPLIED_TO]->(i1:Industry)
             MATCH (i1)-[:PRODUCES]->(p:Product)-[:GENERATES]->(w2:Waste)

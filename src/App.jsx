@@ -1,6 +1,7 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Header from './components/Header';
 import Footer from './components/Footer';
+import ProtectedRoute from './components/ProtectedRoute';
 import Home from './pages/Home';
 import About from './pages/About';
 import HowItWorks from './pages/HowItWorks';
@@ -9,6 +10,10 @@ import Classify from './pages/Classify';
 import Business from './pages/Business';
 import Impact from './pages/Impact';
 import Contact from './pages/Contact';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
+import Dashboard from './pages/Dashboard';
+import Profile from './pages/Profile';
 import './App.css';
 
 function App() {
@@ -17,14 +22,94 @@ function App() {
       <div className="App">
         <Header />
         <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/how-it-works" element={<HowItWorks />} />
-          <Route path="/marketplace" element={<Marketplace />} />
-          <Route path="/classify" element={<Classify />} />
-          <Route path="/business" element={<Business />} />
-          <Route path="/impact" element={<Impact />} />
-          <Route path="/contact" element={<Contact />} />
+          {/* Public Routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          
+          {/* Protected Routes */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Home />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/about"
+            element={
+              <ProtectedRoute>
+                <About />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/how-it-works"
+            element={
+              <ProtectedRoute>
+                <HowItWorks />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/marketplace"
+            element={
+              <ProtectedRoute>
+                <Marketplace />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/classify"
+            element={
+              <ProtectedRoute>
+                <Classify />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/business"
+            element={
+              <ProtectedRoute>
+                <Business />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/impact"
+            element={
+              <ProtectedRoute>
+                <Impact />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/contact"
+            element={
+              <ProtectedRoute>
+                <Contact />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            }
+          />
+          
+          {/* Catch-all redirect */}
+          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
         <Footer />
       </div>

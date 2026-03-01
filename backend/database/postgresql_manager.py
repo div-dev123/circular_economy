@@ -4,22 +4,62 @@ from typing import List, Dict, Any, Optional
 import logging
 from datetime import datetime
 import json
+import hashlib
+import secrets
 
 logger = logging.getLogger(__name__)
 
 class PostgreSQLManager:
     def __init__(self, host: str, port: int, database: str, username: str, password: str):
         try:
-            self.connection = psycopg2.connect(
-                host=host,
-                port=port,
-                database=database,
-                user=username,
-                password=password,
-                cursor_factory=RealDictCursor
-            )
+            # Try to connect with the provided credentials
+            try:
+                self.connection = psycopg2.connect(
+                    host=host,
+                    port=port,
+                    database=database,
+                    user=username,
+                    password=password,
+                    cursor_factory=RealDictCursor
+                )
+            except psycopg2.OperationalError as e:
+                if 'role' in str(e) and 'does not exist' in str(e):
+                    logger.warning(f"Role '{username}' does not exist, trying with default 'postgres' role")
+                    # Try to connect as default postgres user to create the needed role
+                    try:
+                        temp_conn = psycopg2.connect(
+                            host=host,
+                            port=port,
+                            database='postgres',  # Connect to default database
+                            user='postgres',
+                            password='postgres',  # Default password
+                            cursor_factory=RealDictCursor
+                        )
+                        temp_cursor = temp_conn.cursor()
+                        # Create the user if it doesn't exist
+                        temp_cursor.execute(f"DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_user WHERE usename = '{username}') THEN CREATE USER {username} WITH PASSWORD '{password}'; END IF; END $$;")
+                        temp_cursor.execute(f"GRANT ALL PRIVILEGES ON DATABASE {database} TO {username};")
+                        temp_conn.commit()
+                        temp_conn.close()
+                        
+                        # Now try connecting with the created user
+                        self.connection = psycopg2.connect(
+                            host=host,
+                            port=port,
+                            database=database,
+                            user=username,
+                            password=password,
+                            cursor_factory=RealDictCursor
+                        )
+                    except Exception as temp_e:
+                        logger.error(f"Failed to create user or connect: {temp_e}")
+                        raise
+                else:
+                    raise
+            
             self.connection.autocommit = True
             self._create_tables()
+            self._migrate_tables()
             logger.info("PostgreSQL connection successful")
         except Exception as e:
             logger.error(f"PostgreSQL connection failed: {e}")
@@ -38,10 +78,19 @@ class PostgreSQLManager:
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
             email VARCHAR(255) UNIQUE NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            salt VARCHAR(255) NOT NULL,
             company_name VARCHAR(255),
             industry_type VARCHAR(100),
             location VARCHAR(255),
             phone VARCHAR(20),
+            is_active BOOLEAN DEFAULT TRUE,
+            email_verified BOOLEAN DEFAULT FALSE,
+            classifications_count INTEGER DEFAULT 0,
+            listings_count INTEGER DEFAULT 0,
+            waste_processed_tons DECIMAL(15,2) DEFAULT 0.00,
+            co2_saved_tons DECIMAL(15,2) DEFAULT 0.00,
+            cost_savings DECIMAL(15,2) DEFAULT 0.00,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -98,6 +147,25 @@ class PostgreSQLManager:
         for index_query in indexes:
             cursor.execute(index_query)
     
+    def _migrate_tables(self):
+        """Run migrations to update table schemas"""
+        cursor = self.connection.cursor()
+        
+        # Add stats columns to users table if they don't exist
+        migrations = [
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS classifications_count INTEGER DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS listings_count INTEGER DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS waste_processed_tons DECIMAL(15,2) DEFAULT 0.00",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS co2_saved_tons DECIMAL(15,2) DEFAULT 0.00",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS cost_savings DECIMAL(15,2) DEFAULT 0.00"
+        ]
+        
+        for migration in migrations:
+            try:
+                cursor.execute(migration)
+            except Exception as e:
+                logger.warning(f"Migration skipped (column may already exist): {e}")
+    
     # User Management
     def create_user(self, user_data: Dict[str, Any]) -> int:
         """Create a new user"""
@@ -118,12 +186,75 @@ class PostgreSQLManager:
         logger.info(f"Created user with ID: {result['id']}")
         return result['id']
     
+    def hash_password(self, password: str, salt: str = None) -> tuple:
+        """Hash password with salt"""
+        if salt is None:
+            salt = secrets.token_hex(32)
+        password_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
+        return password_hash.hex(), salt
+    
+    def create_user_with_password(self, user_data: Dict[str, Any]) -> int:
+        """Create a new user with password"""
+        cursor = self.connection.cursor()
+        
+        # Hash the password
+        password_hash, salt = self.hash_password(user_data['password'])
+        
+        query = """
+        INSERT INTO users (email, password_hash, salt, company_name, industry_type, location, phone)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+        """
+        cursor.execute(query, (
+            user_data['email'],
+            password_hash,
+            salt,
+            user_data.get('company_name'),
+            user_data.get('industry_type'),
+            user_data.get('location'),
+            user_data.get('phone')
+        ))
+        result = cursor.fetchone()
+        logger.info(f"Created user with ID: {result['id']}")
+        return result['id']
+    
+    def authenticate_user(self, email: str, password: str) -> Optional[Dict]:
+        """Authenticate user with email and password"""
+        cursor = self.connection.cursor()
+        query = "SELECT * FROM users WHERE email = %s AND is_active = TRUE"
+        cursor.execute(query, (email,))
+        user = cursor.fetchone()
+        
+        if user:
+            # Verify password
+            stored_hash = user['password_hash']
+            salt = user['salt']
+            password_hash, _ = self.hash_password(password, salt)
+            
+            if password_hash == stored_hash:
+                # Return user data without password fields
+                user_data = dict(user)
+                del user_data['password_hash']
+                del user_data['salt']
+                return user_data
+        
+        return None
+    
     def get_user_by_email(self, email: str) -> Optional[Dict]:
         """Get user by email"""
         cursor = self.connection.cursor()
         query = "SELECT * FROM users WHERE email = %s"
         cursor.execute(query, (email,))
-        return cursor.fetchone()
+        result = cursor.fetchone()
+        
+        if result:
+            # Return user data without password fields
+            user_data = dict(result)
+            del user_data['password_hash']
+            del user_data['salt']
+            return user_data
+        
+        return None
     
     def get_user_companies(self, user_id: int) -> List[Dict]:
         """Get companies associated with user"""
@@ -287,3 +418,93 @@ class PostgreSQLManager:
             'compliant_companies': compliant_companies,
             'compliance_rate': round((compliant_companies / total_companies * 100), 2) if total_companies > 0 else 0
         }
+    
+    def get_user_by_id(self, user_id: int) -> Optional[Dict]:
+        """Get user by ID"""
+        cursor = self.connection.cursor()
+        query = "SELECT * FROM users WHERE id = %s"
+        cursor.execute(query, (user_id,))
+        result = cursor.fetchone()
+        
+        if result:
+            # Return user data without password fields
+            user_data = dict(result)
+            if 'password_hash' in user_data:
+                del user_data['password_hash']
+            if 'salt' in user_data:
+                del user_data['salt']
+            return user_data
+        
+        return None
+    
+    # Waste-to-Industry Matching
+    WASTE_INDUSTRY_MAP = {
+        'metal': ['Steel', 'Aluminum', 'Metals & Mining', 'Automobile', 'Manufacturing', 'Construction'],
+        'plastic': ['Plastics', 'Manufacturing', 'Rubber', 'Chemicals', 'Automobile'],
+        'paper/cardboard': ['Paper & Pulp', 'Manufacturing', 'Food Processing'],
+        'glass': ['Glass', 'Ceramics', 'Construction', 'Manufacturing'],
+        'organic': ['Agriculture', 'Food Processing', 'Renewable Energy'],
+        'textile': ['Textiles', 'Leather', 'Manufacturing'],
+        'construction': ['Construction', 'Cement', 'Manufacturing', 'Steel'],
+        'hazardous': ['Chemicals', 'Pharmaceuticals', 'Refinery'],
+        'industrial ash': ['Cement', 'Construction', 'Renewable Energy'],
+        'electronic': ['Electronics', 'IT Hardware', 'Metals & Mining', 'Manufacturing'],
+        'mixed': ['Manufacturing', 'Renewable Energy', 'Chemicals', 'Construction'],
+    }
+
+    def get_matching_companies(self, waste_type: str, exclude_user_id: int = None) -> List[Dict]:
+        """Find registered companies whose industry matches a waste classification type"""
+        cursor = self.connection.cursor()
+        industries = self.WASTE_INDUSTRY_MAP.get(waste_type.lower(), [])
+        if not industries:
+            return []
+
+        placeholders = ','.join(['%s'] * len(industries))
+        query = f"""
+            SELECT id, email, company_name, industry_type, location
+            FROM users
+            WHERE industry_type IN ({placeholders})
+              AND is_active = TRUE
+        """
+        params = list(industries)
+
+        if exclude_user_id:
+            query += " AND id != %s"
+            params.append(exclude_user_id)
+
+        query += " ORDER BY company_name"
+        cursor.execute(query, params)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def update_user(self, user_id: int, user_data: Dict[str, Any]) -> bool:
+        """Update user profile"""
+        cursor = self.connection.cursor()
+        
+        # Build dynamic UPDATE query
+        update_fields = []
+        values = []
+        
+        allowed_fields = ['company_name', 'industry_type', 'location', 'phone']
+        
+        for field in allowed_fields:
+            if field in user_data:
+                update_fields.append(f"{field} = %s")
+                values.append(user_data[field])
+        
+        if not update_fields:
+            return False
+        
+        # Add updated_at timestamp
+        update_fields.append("updated_at = CURRENT_TIMESTAMP")
+        
+        values.append(user_id)
+        
+        query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = %s"
+        
+        try:
+            cursor.execute(query, values)
+            logger.info(f"Updated user with ID: {user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error updating user: {e}")
+            return False

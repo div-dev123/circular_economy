@@ -187,6 +187,56 @@ const HowItWorks = () => {
           </div>
         </div>
       </section>
+
+      <section className="india-focus-section">
+        <div className="container">
+          <div className="section-header">
+            <h2>Leading Circular Economy in India</h2>
+            <p>Supporting India's transition to sustainable industrial practices</p>
+          </div>
+          
+          <div className="india-benefits-grid">
+            <div className="india-benefit-card">
+              <div className="benefit-icon">🏭</div>
+              <h3>MSME Support</h3>
+              <p>Tailored solutions for India's Micro, Small & Medium Enterprises</p>
+            </div>
+            
+            <div className="india-benefit-card">
+              <div className="benefit-icon">🌍</div>
+              <h3>Swarachna Initiative</h3>
+              <p>Align with India's self-reliance mission through waste valorization</p>
+            </div>
+            
+            <div className="india-benefit-card">
+              <div className="benefit-icon">📊</div>
+              <h3>Government Compliance</h3>
+              <p>Integrated with CPCB and state pollution control board requirements</p>
+            </div>
+            
+            <div className="india-benefit-card">
+              <div className="benefit-icon">💰</div>
+              <h3>Subsidy Opportunities</h3>
+              <p>Access government incentives for waste-to-resource initiatives</p>
+            </div>
+          </div>
+          
+          <div className="india-statistics">
+            <div className="stat-item">
+              <span className="stat-number">₹2.5L Cr</span>
+              <span className="stat-label">Potential market opportunity in India</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-number">300M</span>
+              <span className="stat-label">Tons of waste generated annually</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-number">60%</span>
+              <span className="stat-label">Waste that can be recycled/valorized</span>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 };

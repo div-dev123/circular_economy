@@ -4,7 +4,9 @@ import './Classify.css';
 const Classify = () => {
   const [selectedImage, setSelectedImage] = useState(null);
   const [classificationResult, setClassificationResult] = useState(null);
+  const [matchedCompanies, setMatchedCompanies] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [message, setMessage] = useState('');
   // eslint-disable-next-line no-unused-vars
   const [backendStatus, setBackendStatus] = useState('checking');
 
@@ -12,7 +14,7 @@ const Classify = () => {
   useEffect(() => {
     const checkBackend = async () => {
       try {
-        const response = await fetch('http://localhost:5001/api/health');
+        const response = await fetch('/api/health');
         const data = await response.json();
         setBackendStatus(data.model_loaded ? 'connected' : 'model_missing');
       } catch {
@@ -39,6 +41,8 @@ const Classify = () => {
     if (!selectedImage) return;
     
     setIsProcessing(true);
+    setMessage('');
+    setMatchedCompanies([]);
     
     try {
       // Convert base64 image to blob
@@ -50,7 +54,7 @@ const Classify = () => {
       formData.append('image', blob, 'waste-image.jpg');
       
       // Send to backend API
-      const apiResponse = await fetch('http://localhost:5001/api/classify', {
+      const apiResponse = await fetch('/api/classify', {
         method: 'POST',
         body: formData,
       });
@@ -61,29 +65,27 @@ const Classify = () => {
       
       const results = await apiResponse.json();
       setClassificationResult(results);
+
+      // Fetch matching companies based on top waste type
+      if (results.wasteTypes && results.wasteTypes.length > 0) {
+        const topWasteType = results.wasteTypes[0].name;
+        try {
+          const userStr = localStorage.getItem('user');
+          const currentUser = userStr ? JSON.parse(userStr) : null;
+          const excludeParam = currentUser?.id ? `&exclude_user_id=${currentUser.id}` : '';
+          const matchResponse = await fetch(`/api/match-companies?waste_type=${encodeURIComponent(topWasteType)}${excludeParam}`);
+          if (matchResponse.ok) {
+            const matchData = await matchResponse.json();
+            setMatchedCompanies(matchData.matches || []);
+          }
+        } catch (matchErr) {
+          console.error('Match fetch error:', matchErr);
+        }
+      }
       
     } catch (error) {
       console.error('Classification error:', error);
-      // Fallback to mock data if API fails
-      const mockResults = {
-        wasteTypes: [
-          { name: "Plastic", confidence: 92, icon: "🥤" },
-          { name: "Metal", confidence: 78, icon: "🔧" },
-          { name: "Organic", confidence: 45, icon: "🌱" }
-        ],
-        potentialUses: [
-          "Recycling into new plastic products",
-          "Metal reprocessing for manufacturing",
-          "Composting for agricultural use"
-        ],
-        estimatedValue: "$120-180 per ton",
-        environmentalImpact: {
-          co2Saved: "1.2 tons CO₂",
-          landfillDiverted: "100%",
-          energyRecovered: "850 kWh"
-        }
-      };
-      setClassificationResult(mockResults);
+      setMessage('Unable to classify image. Please try again or check your connection.');
     } finally {
       setIsProcessing(false);
     }
@@ -146,6 +148,10 @@ const Classify = () => {
                     'Classify Waste'
                   )}
                 </button>
+              )}
+
+              {message && (
+                <div className="error-message">{message}</div>
               )}
             </div>
 
@@ -246,6 +252,37 @@ const Classify = () => {
                     Create Listing
                   </button>
                 </div>
+
+                {matchedCompanies.length > 0 && (
+                  <div className="matched-companies">
+                    <h3>🤝 Matched Companies</h3>
+                    <p className="match-subtitle">
+                      These companies can process or reuse your <strong>{classificationResult.wasteTypes[0].name}</strong> waste
+                    </p>
+                    <div className="companies-grid">
+                      {matchedCompanies.map((company) => (
+                        <div key={company.id} className="company-card">
+                          <div className="company-avatar">
+                            {company.company_name.charAt(0)}
+                          </div>
+                          <div className="company-info">
+                            <h4>{company.company_name}</h4>
+                            <span className="company-industry">{company.industry_type}</span>
+                            {company.location && (
+                              <span className="company-location">📍 {company.location}</span>
+                            )}
+                          </div>
+                          <a href={`mailto:${company.email}`} className="btn btn-secondary btn-small">
+                            Contact
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                    {matchedCompanies.length > 5 && (
+                      <p className="match-note">Showing all {matchedCompanies.length} matching companies</p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

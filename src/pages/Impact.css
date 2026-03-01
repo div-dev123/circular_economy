@@ -588,3 +588,109 @@
     align-items: center;
   }
 }
+
+/* Empty state styles */
+.empty-activity-section {
+  padding: 4rem 0;
+}
+
+.empty-activity {
+  text-align: center;
+  padding: 3rem 2rem;
+  background: white;
+  border-radius: 15px;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.empty-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.empty-activity h2 {
+  color: #2d5a3d;
+  margin-bottom: 1rem;
+}
+
+.empty-activity p {
+  color: #666;
+  line-height: 1.6;
+  margin-bottom: 2rem;
+}
+
+.empty-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* Activity section */
+.activity-section {
+  padding: 3rem 0;
+}
+
+.activity-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+}
+
+.summary-card {
+  background: white;
+  padding: 2rem;
+  border-radius: 15px;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+  text-align: center;
+}
+
+.summary-card h3 {
+  margin-bottom: 0.5rem;
+}
+
+.summary-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #2d5a3d;
+  margin: 0.5rem 0;
+}
+
+.summary-desc {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+/* Commitments grid */
+.commitments-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+}
+
+.commitment {
+  background: white;
+  padding: 2rem;
+  border-radius: 15px;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.commitment-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.commitment-content h4 {
+  color: #2d5a3d;
+  margin-bottom: 0.5rem;
+}
+
+.commitment-content p {
+  color: #666;
+  line-height: 1.5;
+  margin: 0;
+}

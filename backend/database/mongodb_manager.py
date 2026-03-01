@@ -31,6 +31,14 @@ class MongoDBManager:
         logger.info(f"Created user: {result.inserted_id}")
         return str(result.inserted_id)
     
+    def create_user_profile(self, user_data: Dict[str, Any]) -> str:
+        """Create a new user profile in MongoDB"""
+        user_data['created_at'] = datetime.utcnow()
+        user_data['updated_at'] = datetime.utcnow()
+        result = self.db.users.insert_one(user_data)
+        logger.info(f"Created user profile: {result.inserted_id}")
+        return str(result.inserted_id)
+    
     def get_user(self, user_id: str) -> Optional[Dict]:
         """Get user by ID"""
         return self.db.users.find_one({'_id': user_id})

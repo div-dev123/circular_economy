@@ -7,15 +7,18 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
 *.local
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
@@ -23,8 +26,27 @@ dist-ssr
 *.sln
 *.sw?
 
-backend/model.pth
-backend/.env.example
-backend/.env
-backend/database/__pycache__/
+# Python
+__pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+*.egg
+.Python
+env/
+venv/
+.venv/
+
+# Backend
+backend/model.pth
+backend/.env
+backend/.env.example
+backend/app.py.bak
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Temp files
+/tmp/
+*.tmp

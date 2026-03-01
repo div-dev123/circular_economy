@@ -1,0 +1,112 @@
+.login {
+  margin-top: 80px;
+}
+
+.login-hero {
+  background: linear-gradient(135deg, #2d5a3d 0%, #3a7d44 100%);
+  color: white;
+  padding: 4rem 0;
+  text-align: center;
+}
+
+.login-hero h1 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.login-hero .subtitle {
+  font-size: 1.1rem;
+  opacity: 0.9;
+}
+
+.login-content {
+  padding: 3rem 0;
+  background: #f8f9fa;
+}
+
+.login-form-container {
+  max-width: 500px;
+  margin: 0 auto;
+  background: white;
+  padding: 3rem;
+  border-radius: 15px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.login-form .error-message {
+  background: #fee;
+  color: #c33;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  border-left: 4px solid #c33;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 0.8rem 1rem;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: border-color 0.3s ease;
+  box-sizing: border-box;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #2d5a3d;
+}
+
+.login-form button[type="submit"] {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.login-links {
+  text-align: center;
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid #eee;
+}
+
+.login-links a {
+  color: #2d5a3d;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.login-links a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .login {
+    margin-top: 60px;
+  }
+  
+  .login-hero {
+    padding: 2rem 0;
+  }
+  
+  .login-hero h1 {
+    font-size: 2rem;
+  }
+  
+  .login-form-container {
+    margin: 0 1rem;
+    padding: 2rem;
+  }
+}
