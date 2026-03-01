@@ -27,7 +27,7 @@ const Home = () => {
             <div className="hero-stats">
               <div className="stat">
                 <span className="stat-number">10M+</span>
-                <span className="stat-label">Tons Waste Diverted</span>
+                <span className="stat-label">Tonnes Waste Diverted</span>
               </div>
               <div className="stat">
                 <span className="stat-number">500+</span>
@@ -35,7 +35,7 @@ const Home = () => {
               </div>
               <div className="stat">
                 <span className="stat-number">2.3B</span>
-                <span className="stat-label">CO₂ Saved (tons)</span>
+                <span className="stat-label">CO₂ Saved (tonnes)</span>
               </div>
             </div>
           </div>

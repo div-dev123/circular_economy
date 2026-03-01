@@ -1,7 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './Classify.css';
 
+const MATCHING_STEPS = [
+  { label: 'Applying rule-based compatibility filter…', icon: '📋' },
+  { label: 'Computing ML cosine similarity vectors…', icon: '🧠' },
+  { label: 'Running KNN cluster analysis…', icon: '🔬' },
+  { label: 'Calculating geographic proximity scores…', icon: '📍' },
+  { label: 'Optimising with linear programming…', icon: '⚙️' },
+  { label: 'Ranking and finalising matches…', icon: '🏆' },
+];
+
 const Classify = () => {
+  const navigate = useNavigate();
   const [selectedImage, setSelectedImage] = useState(null);
   const [classificationResult, setClassificationResult] = useState(null);
   const [matchedCompanies, setMatchedCompanies] = useState([]);
@@ -9,6 +20,39 @@ const Classify = () => {
   const [message, setMessage] = useState('');
   // eslint-disable-next-line no-unused-vars
   const [backendStatus, setBackendStatus] = useState('checking');
+  const [isFindingMatches, setIsFindingMatches] = useState(false);
+  const [matchProgress, setMatchProgress] = useState(0);
+  const [matchStepIdx, setMatchStepIdx] = useState(0);
+  const matchTimerRef = useRef(null);
+
+  const handleFindMatches = () => {
+    if (!classificationResult?.wasteTypes?.length) return;
+    setIsFindingMatches(true);
+    setMatchProgress(0);
+    setMatchStepIdx(0);
+
+    const totalDuration = 5000;
+    const stepInterval = totalDuration / MATCHING_STEPS.length;
+    const tickInterval = 50;
+    let elapsed = 0;
+
+    matchTimerRef.current = setInterval(() => {
+      elapsed += tickInterval;
+      const pct = Math.min((elapsed / totalDuration) * 100, 100);
+      setMatchProgress(pct);
+      setMatchStepIdx(Math.min(Math.floor(elapsed / stepInterval), MATCHING_STEPS.length - 1));
+
+      if (elapsed >= totalDuration) {
+        clearInterval(matchTimerRef.current);
+        const topType = classificationResult.wasteTypes[0].name.toLowerCase();
+        navigate(`/matches?waste_type=${encodeURIComponent(topType)}`);
+      }
+    }, tickInterval);
+  };
+
+  useEffect(() => {
+    return () => { if (matchTimerRef.current) clearInterval(matchTimerRef.current); };
+  }, []);
 
   // Check backend status on component mount
   useEffect(() => {
@@ -223,64 +267,51 @@ const Classify = () => {
                   </div>
                 </div>
 
-                <div className="next-steps">
-                  <h3>Next Steps</h3>
-                  <div className="steps-grid">
-                    <div className="step">
-                      <div className="step-number">1</div>
-                      <div className="step-content">
-                        <h4>Create Marketplace Listing</h4>
-                        <p>List this waste on our platform to find buyers</p>
-                      </div>
-                    </div>
-                    <div className="step">
-                      <div className="step-number">2</div>
-                      <div className="step-content">
-                        <h4>Connect with Partners</h4>
-                        <p>Get matched with companies who can use your waste</p>
-                      </div>
-                    </div>
-                    <div className="step">
-                      <div className="step-number">3</div>
-                      <div className="step-content">
-                        <h4>Track Impact</h4>
-                        <p>Monitor environmental and financial benefits</p>
-                      </div>
-                    </div>
-                  </div>
-                  <button className="btn btn-primary btn-large">
-                    Create Listing
+                {/* Find Matches CTA */}
+                <div className="find-matches-cta">
+                  <button
+                    className="btn btn-primary btn-large find-matches-btn"
+                    onClick={handleFindMatches}
+                    disabled={isFindingMatches}
+                  >
+                    🤖 Find Matching Companies
                   </button>
+                  {matchedCompanies.length > 0 && (
+                    <p className="quick-match-note">
+                      {matchedCompanies.length} potential match{matchedCompanies.length !== 1 ? 'es' : ''} found — click above for detailed AI scoring
+                    </p>
+                  )}
                 </div>
 
-                {matchedCompanies.length > 0 && (
-                  <div className="matched-companies">
-                    <h3>🤝 Matched Companies</h3>
-                    <p className="match-subtitle">
-                      These companies can process or reuse your <strong>{classificationResult.wasteTypes[0].name}</strong> waste
-                    </p>
-                    <div className="companies-grid">
-                      {matchedCompanies.map((company) => (
-                        <div key={company.id} className="company-card">
-                          <div className="company-avatar">
-                            {company.company_name.charAt(0)}
+                {/* Matching overlay */}
+                {isFindingMatches && (
+                  <div className="matching-overlay">
+                    <div className="matching-modal">
+                      <div className="matching-header">
+                        <span className="matching-icon">🤖</span>
+                        <h3>AI Matching Engine</h3>
+                        <p>Analysing <strong>{classificationResult.wasteTypes[0].name}</strong> against registered companies</p>
+                      </div>
+
+                      <div className="matching-progress-bar">
+                        <div className="matching-progress-fill" style={{ width: `${matchProgress}%` }} />
+                      </div>
+                      <span className="matching-pct">{Math.round(matchProgress)}%</span>
+
+                      <div className="matching-steps">
+                        {MATCHING_STEPS.map((step, i) => (
+                          <div
+                            key={i}
+                            className={`matching-step ${
+                              i < matchStepIdx ? 'done' : i === matchStepIdx ? 'active' : ''
+                            }`}
+                          >
+                            <span className="step-icon">{i < matchStepIdx ? '✅' : i === matchStepIdx ? step.icon : '⏳'}</span>
+                            <span className="step-label">{step.label}</span>
                           </div>
-                          <div className="company-info">
-                            <h4>{company.company_name}</h4>
-                            <span className="company-industry">{company.industry_type}</span>
-                            {company.location && (
-                              <span className="company-location">📍 {company.location}</span>
-                            )}
-                          </div>
-                          <a href={`mailto:${company.email}`} className="btn btn-secondary btn-small">
-                            Contact
-                          </a>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                    {matchedCompanies.length > 5 && (
-                      <p className="match-note">Showing all {matchedCompanies.length} matching companies</p>
-                    )}
                   </div>
                 )}
               </div>

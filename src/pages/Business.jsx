@@ -167,11 +167,11 @@ const Business = () => {
                 </div>
                 <div className="dashboard-content">
                   <div className="metric-card">
-                    <div className="metric-value">1.2M tons</div>
+                    <div className="metric-value">12 Lakh tonnes</div>
                     <div className="metric-label">Waste Diverted</div>
                   </div>
                   <div className="metric-card">
-                    <div className="metric-value">$2.4M</div>
+                    <div className="metric-value">₹20 Cr</div>
                     <div className="metric-label">Cost Savings</div>
                   </div>
                   <div className="metric-card">
@@ -207,7 +207,7 @@ const Business = () => {
             <div className="pricing-card">
               <div className="plan-name">Starter</div>
               <div className="plan-price">
-                <span className="amount">$299</span>
+                <span className="amount">₹24,999</span>
                 <span className="period">/month</span>
               </div>
               <ul className="plan-features">
@@ -223,7 +223,7 @@ const Business = () => {
               <div className="popular-badge">Most Popular</div>
               <div className="plan-name">Professional</div>
               <div className="plan-price">
-                <span className="amount">$799</span>
+                <span className="amount">₹66,499</span>
                 <span className="period">/month</span>
               </div>
               <ul className="plan-features">

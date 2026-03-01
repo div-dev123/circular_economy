@@ -156,27 +156,27 @@ const Contact = () => {
           
           <div className="locations-grid">
             <div className="location-card">
-              <div className="location-flag">🇺🇸</div>
-              <h3>North America</h3>
+              <div className="location-flag">�🇳</div>
+              <h3>Mumbai</h3>
               <p>Headquarters</p>
-              <p>San Francisco, CA</p>
-              <p>+1 (555) 123-4567</p>
+              <p>Bandra Kurla Complex, Mumbai</p>
+              <p>+91 22 4000 1234</p>
             </div>
             
             <div className="location-card">
-              <div className="location-flag">🇪🇺</div>
-              <h3>Europe</h3>
+              <div className="location-flag">🇮🇳</div>
+              <h3>New Delhi</h3>
               <p>Regional Office</p>
-              <p>Amsterdam, Netherlands</p>
-              <p>+31 20 123 4567</p>
+              <p>Connaught Place, New Delhi</p>
+              <p>+91 11 4000 5678</p>
             </div>
             
             <div className="location-card">
-              <div className="location-flag">🌏</div>
-              <h3>Asia-Pacific</h3>
-              <p>Regional Office</p>
-              <p>Singapore</p>
-              <p>+65 6123 4567</p>
+              <div className="location-flag">🇮🇳</div>
+              <h3>Bengaluru</h3>
+              <p>Tech Hub</p>
+              <p>Whitefield, Bengaluru</p>
+              <p>+91 80 4000 9012</p>
             </div>
           </div>
         </div>

@@ -265,34 +265,53 @@ class CassandraManager:
                             start_time: datetime = None, end_time: datetime = None,
                             limit: int = 1000) -> List[Dict]:
         """Get analytics time-series data"""
-        if dimension1 and start_time and end_time:
-            query = """
-            SELECT * FROM analytics_timeseries 
-            WHERE metric_name = ? AND dimension1 = ? AND timestamp >= ? AND timestamp <= ?
-            ORDER BY timestamp DESC
-            LIMIT ?
-            """
-            statement = self.session.prepare(query)
-            rows = self.session.execute(statement, [
-                metric_name, dimension1, start_time, end_time, limit
-            ])
-        elif dimension1:
-            query = """
-            SELECT * FROM analytics_timeseries 
-            WHERE metric_name = ? AND dimension1 = ? 
-            ORDER BY timestamp DESC
-            LIMIT ?
-            """
-            statement = self.session.prepare(query)
-            rows = self.session.execute(statement, [metric_name, dimension1, limit])
-        else:
-            query = """
-            SELECT * FROM analytics_timeseries 
-            WHERE metric_name = ? 
-            ORDER BY timestamp DESC
-            LIMIT ?
-            """
-            statement = self.session.prepare(query)
-            rows = self.session.execute(statement, [metric_name, limit])
-        
-        return [dict(row) for row in rows]
+        try:
+            if dimension1 and start_time and end_time:
+                query = """
+                SELECT * FROM analytics_timeseries 
+                WHERE metric_name = ? AND dimension1 = ? AND timestamp >= ? AND timestamp <= ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+                """
+                statement = self.session.prepare(query)
+                rows = self.session.execute(statement, [
+                    metric_name, dimension1, start_time, end_time, limit
+                ])
+            elif dimension1:
+                query = """
+                SELECT * FROM analytics_timeseries 
+                WHERE metric_name = ? AND dimension1 = ? 
+                ORDER BY timestamp DESC
+                LIMIT ?
+                """
+                statement = self.session.prepare(query)
+                rows = self.session.execute(statement, [metric_name, dimension1, limit])
+            elif start_time and end_time:
+                query = """
+                SELECT * FROM analytics_timeseries 
+                WHERE metric_name = ? AND timestamp >= ? AND timestamp <= ?
+                LIMIT ? ALLOW FILTERING
+                """
+                statement = self.session.prepare(query)
+                rows = self.session.execute(statement, [metric_name, start_time, end_time, limit])
+            else:
+                query = """
+                SELECT * FROM analytics_timeseries 
+                WHERE metric_name = ? 
+                LIMIT ? ALLOW FILTERING
+                """
+                statement = self.session.prepare(query)
+                rows = self.session.execute(statement, [metric_name, limit])
+            
+            results = []
+            for row in rows:
+                d = dict(row._asdict()) if hasattr(row, '_asdict') else dict(row)
+                # Serialise datetime fields
+                for k, v in d.items():
+                    if isinstance(v, datetime):
+                        d[k] = v.isoformat()
+                results.append(d)
+            return results
+        except Exception as e:
+            logger.warning(f"Error getting analytics metrics for {metric_name}: {e}")
+            return []

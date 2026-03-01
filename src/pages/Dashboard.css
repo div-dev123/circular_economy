@@ -534,3 +534,124 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== LIVE ANALYTICS CARD ===== */
+.dash-analytics-card h3 {
+  margin-bottom: 0.75rem;
+}
+
+.dash-db-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+.dash-db-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  color: #fff;
+}
+.db-postgresql { background: #336791; }
+.db-redis { background: #dc382d; }
+.db-mongodb { background: #47a248; }
+.db-cassandra { background: #1287b1; }
+.db-neo4j { background: #008cc1; }
+
+.dash-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+}
+.dash-analytics-item {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 0.7rem 0.5rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.dash-analytics-val {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #111827;
+  line-height: 1.2;
+}
+.dash-analytics-lbl {
+  font-size: 0.68rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+.dash-analytics-db {
+  font-size: 0.55rem;
+  color: #9ca3af;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Classification breakdown bars */
+.dash-analytics-breakdown {
+  margin-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 0.8rem;
+}
+.dash-analytics-breakdown h4 {
+  font-size: 0.82rem;
+  color: #374151;
+  margin: 0 0 0.6rem;
+}
+.dash-breakdown-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.dash-bar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.dash-bar-label {
+  width: 90px;
+  font-size: 0.72rem;
+  color: #374151;
+  font-weight: 500;
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+.dash-bar-track {
+  flex: 1;
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.dash-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3a7d44, #4ade80);
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+.dash-bar-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #111827;
+  width: 28px;
+  text-align: right;
+}
+
+/* Activity dot colours */
+.dot-match_search { background: #6366f1 !important; }
+.dot-message_sent { background: #10b981 !important; }
+.dot-classification { background: #f59e0b !important; }
+
+@media (max-width: 480px) {
+  .dash-analytics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

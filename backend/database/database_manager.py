@@ -331,7 +331,7 @@ class DatabaseManager:
                     {'name': 'PLASTIC', 'confidence': 0.95, 'icon': '🥤'},
                     {'name': 'METAL', 'confidence': 0.78, 'icon': '🔧'}
                 ],
-                'estimated_value': '$120-180 per ton',
+                'estimated_value': '₹10,000-15,000 per tonne',
                 'processing_time': '2.3s'
             }
             

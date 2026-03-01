@@ -119,8 +119,7 @@
 .waste-types h3,
 .potential-uses h3,
 .value-estimate h3,
-.environmental-impact h3,
-.next-steps h3 {
+.environmental-impact h3 {
   color: #2d5a3d;
   margin-bottom: 1.5rem;
   font-size: 1.4rem;
@@ -250,40 +249,133 @@
   font-size: 0.9rem;
 }
 
-.steps-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
+/* ── Find Matches CTA ── */
+.find-matches-cta {
+  text-align: center;
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid #e5e7eb;
+}
+.find-matches-btn {
+  font-size: 1.05rem;
+  padding: 0.9rem 2.5rem;
+  gap: 0.5rem;
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.35); }
+  50%       { box-shadow: 0 0 20px 4px rgba(22, 163, 74, 0.18); }
+}
+.quick-match-note {
+  margin-top: 0.75rem;
+  color: #6b7280;
+  font-size: 0.85rem;
 }
 
-.step {
-  display: flex;
-  gap: 1rem;
-  align-items: flex-start;
-}
-
-.step-number {
-  background: #2d5a3d;
-  color: white;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
+/* ── Matching Overlay ── */
+.matching-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: bold;
+  animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.matching-modal {
+  background: #fff;
+  border-radius: 20px;
+  padding: 2.5rem 2.5rem 2rem;
+  width: 480px;
+  max-width: 92vw;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  text-align: center;
+}
+.matching-header {
+  margin-bottom: 1.75rem;
+}
+.matching-icon {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+.matching-header h3 {
+  color: #166534;
+  font-size: 1.3rem;
+  margin-bottom: 0.35rem;
+}
+.matching-header p {
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+/* progress bar */
+.matching-progress-bar {
+  width: 100%;
+  height: 10px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 0.4rem;
+}
+.matching-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #16a34a, #166534);
+  border-radius: 999px;
+  transition: width 0.05s linear;
+}
+.matching-pct {
+  display: block;
+  font-weight: 700;
+  font-size: 1rem;
+  color: #166534;
+  margin-bottom: 1.5rem;
+}
+
+/* step list */
+.matching-steps {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.matching-step {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  background: #f9fafb;
+  opacity: 0.4;
+  transition: opacity 0.3s, background 0.3s, transform 0.3s;
+}
+.matching-step.active {
+  opacity: 1;
+  background: #ecfdf5;
+  transform: scale(1.02);
+}
+.matching-step.done {
+  opacity: 0.7;
+  background: #f0fdf4;
+}
+.step-icon {
+  font-size: 1.15rem;
   flex-shrink: 0;
 }
-
-.step-content h4 {
-  color: #2d5a3d;
-  margin-bottom: 0.3rem;
+.step-label {
+  font-size: 0.88rem;
+  color: #374151;
+  font-weight: 500;
 }
-
-.step-content p {
-  color: #666;
-  margin: 0;
+.matching-step.active .step-label {
+  color: #166534;
+  font-weight: 600;
 }
 
 .technology-section {
@@ -370,10 +462,6 @@
   }
   
   .impact-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .steps-grid {
     grid-template-columns: 1fr;
   }
   

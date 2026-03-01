@@ -152,7 +152,7 @@ const HowItWorks = () => {
                 <div className="dashboard-stats">
                   <div className="stat-card">
                     <span className="stat-value">1.2M</span>
-                    <span className="stat-label">Tons Diverted</span>
+                    <span className="stat-label">Tonnes Diverted</span>
                   </div>
                   <div className="stat-card">
                     <span className="stat-value">84%</span>
@@ -228,7 +228,7 @@ const HowItWorks = () => {
             </div>
             <div className="stat-item">
               <span className="stat-number">300M</span>
-              <span className="stat-label">Tons of waste generated annually</span>
+              <span className="stat-label">Tonnes of waste generated annually</span>
             </div>
             <div className="stat-item">
               <span className="stat-number">60%</span>

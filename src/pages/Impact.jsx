@@ -69,7 +69,7 @@ const Impact = () => {
             <div className="metric-card secondary">
               <div className="metric-icon">🗑️</div>
               <div className="metric-content">
-                <div className="metric-value">{userStats?.waste_processed || '0.00'} tons</div>
+                <div className="metric-value">{userStats?.waste_processed || '0.00'} tonnes</div>
                 <div className="metric-label">Waste Processed</div>
               </div>
             </div>
@@ -77,7 +77,7 @@ const Impact = () => {
             <div className="metric-card secondary">
               <div className="metric-icon">🌍</div>
               <div className="metric-content">
-                <div className="metric-value">{userStats?.co2_saved || '0.00'} tons</div>
+                <div className="metric-value">{userStats?.co2_saved || '0.00'} tonnes</div>
                 <div className="metric-label">CO₂ Saved</div>
               </div>
             </div>

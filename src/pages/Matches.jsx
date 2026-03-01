@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import './Matches.css';
 
 const WASTE_LABELS = {
@@ -24,7 +24,10 @@ const scoreColor = (v) => {
 };
 
 const Matches = () => {
-  const [wasteType, setWasteType] = useState('metal');
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const initialWaste = searchParams.get('waste_type') || 'metal';
+  const [wasteType, setWasteType] = useState(initialWaste);
   const [wasteTypes, setWasteTypes] = useState([]);
   const [matches, setMatches] = useState([]);
   const [weights, setWeights] = useState(null);
@@ -109,7 +112,7 @@ const Matches = () => {
             </div>
 
             <div className="control-group">
-              <label htmlFor="qty-input">Quantity (tons)</label>
+              <label htmlFor="qty-input">Quantity (tonnes)</label>
               <input
                 id="qty-input"
                 type="number"
@@ -185,6 +188,15 @@ const Matches = () => {
                         <span>📸 {m.classifications_count || 0} classifications</span>
                         <span>🏷️ {m.listings_count || 0} listings</span>
                       </div>
+                      <button
+                        className="btn btn-primary btn-sm chat-match-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/chat?with=${m.id}&waste=${encodeURIComponent(wasteType)}`);
+                        }}
+                      >
+                        💬 Start Chat
+                      </button>
                     </div>
                   )}
 

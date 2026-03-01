@@ -67,6 +67,7 @@ const Header = () => {
     { to: '/how-it-works', label: 'How It Works' },
     { to: '/marketplace', label: 'Marketplace' },
     { to: '/matches', label: 'Matches' },
+    { to: '/chat', label: 'Chat' },
     { to: '/classify', label: 'Classification' },
   ];
 

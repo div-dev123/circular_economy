@@ -146,6 +146,9 @@ class PostgreSQLManager:
         
         for index_query in indexes:
             cursor.execute(index_query)
+        
+        # Chat tables
+        self._create_chat_tables()
     
     # Approximate coordinates for Indian cities used in our seed data
     INDIAN_CITY_COORDS = {
@@ -602,3 +605,142 @@ class PostgreSQLManager:
             ORDER BY industry_type
         """)
         return [row['industry_type'] for row in cursor.fetchall()]
+
+    # ────────────────────────────────────────────────
+    #  Chat / Messaging helpers
+    # ────────────────────────────────────────────────
+
+    def _create_chat_tables(self):
+        """Create conversations & messages tables (idempotent)."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS conversations (
+                id SERIAL PRIMARY KEY,
+                user1_id INTEGER NOT NULL REFERENCES users(id),
+                user2_id INTEGER NOT NULL REFERENCES users(id),
+                waste_context VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user1_id, user2_id)
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id SERIAL PRIMARY KEY,
+                conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                sender_id INTEGER NOT NULL REFERENCES users(id),
+                content TEXT NOT NULL,
+                is_read BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_conv_users ON conversations(user1_id, user2_id)")
+
+    def get_or_create_conversation(self, user_id: int, other_id: int, waste_context: str = '') -> Dict:
+        """Return existing conversation between two users, or create one."""
+        lo, hi = sorted([user_id, other_id])
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT * FROM conversations WHERE user1_id = %s AND user2_id = %s",
+            (lo, hi)
+        )
+        conv = cursor.fetchone()
+        if conv:
+            return dict(conv)
+        cursor.execute(
+            """INSERT INTO conversations (user1_id, user2_id, waste_context)
+               VALUES (%s, %s, %s) RETURNING *""",
+            (lo, hi, waste_context)
+        )
+        return dict(cursor.fetchone())
+
+    def get_conversations_for_user(self, user_id: int) -> List[Dict]:
+        """List all conversations for a user, enriched with partner info & last message."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT c.*,
+                   u1.company_name AS user1_name, u1.industry_type AS user1_industry,
+                   u2.company_name AS user2_name, u2.industry_type AS user2_industry,
+                   (SELECT content FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS last_message,
+                   (SELECT created_at FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS last_message_at,
+                   (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id != %s AND m.is_read = FALSE) AS unread_count
+            FROM conversations c
+            JOIN users u1 ON c.user1_id = u1.id
+            JOIN users u2 ON c.user2_id = u2.id
+            WHERE c.user1_id = %s OR c.user2_id = %s
+            ORDER BY COALESCE(
+                (SELECT created_at FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1),
+                c.created_at
+            ) DESC
+        """, (user_id, user_id, user_id))
+        rows = cursor.fetchall()
+        results = []
+        for row in rows:
+            r = dict(row)
+            # Determine partner
+            if r['user1_id'] == user_id:
+                r['partner_name'] = r['user2_name']
+                r['partner_industry'] = r['user2_industry']
+                r['partner_id'] = r['user2_id']
+            else:
+                r['partner_name'] = r['user1_name']
+                r['partner_industry'] = r['user1_industry']
+                r['partner_id'] = r['user1_id']
+            # Serialise datetimes
+            for k in ('created_at', 'updated_at', 'last_message_at'):
+                if r.get(k):
+                    r[k] = r[k].isoformat()
+            results.append(r)
+        return results
+
+    def get_messages(self, conversation_id: int, user_id: int, limit: int = 100) -> List[Dict]:
+        """Fetch messages for a conversation & mark incoming ones as read."""
+        cursor = self.connection.cursor()
+        # Mark as read
+        cursor.execute(
+            "UPDATE messages SET is_read = TRUE WHERE conversation_id = %s AND sender_id != %s AND is_read = FALSE",
+            (conversation_id, user_id)
+        )
+        cursor.execute("""
+            SELECT m.*, u.company_name AS sender_name
+            FROM messages m JOIN users u ON m.sender_id = u.id
+            WHERE m.conversation_id = %s
+            ORDER BY m.created_at ASC
+            LIMIT %s
+        """, (conversation_id, limit))
+        results = []
+        for row in cursor.fetchall():
+            r = dict(row)
+            if r.get('created_at'):
+                r['created_at'] = r['created_at'].isoformat()
+            results.append(r)
+        return results
+
+    def send_message(self, conversation_id: int, sender_id: int, content: str) -> Dict:
+        """Insert a new message and bump conversation updated_at."""
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "INSERT INTO messages (conversation_id, sender_id, content) VALUES (%s, %s, %s) RETURNING *",
+            (conversation_id, sender_id, content)
+        )
+        msg = dict(cursor.fetchone())
+        cursor.execute("UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = %s", (conversation_id,))
+        if msg.get('created_at'):
+            msg['created_at'] = msg['created_at'].isoformat()
+        # Attach sender name
+        cursor.execute("SELECT company_name FROM users WHERE id = %s", (sender_id,))
+        row = cursor.fetchone()
+        msg['sender_name'] = row['company_name'] if row else 'Unknown'
+        return msg
+
+    def get_unread_count(self, user_id: int) -> int:
+        """Total unread messages across all conversations."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT COUNT(*) AS cnt FROM messages m
+            JOIN conversations c ON m.conversation_id = c.id
+            WHERE (c.user1_id = %s OR c.user2_id = %s)
+              AND m.sender_id != %s AND m.is_read = FALSE
+        """, (user_id, user_id, user_id))
+        return cursor.fetchone()['cnt']
