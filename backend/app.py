@@ -12,6 +12,14 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+# Import matching engine
+try:
+    from matching_engine import find_matches, batch_optimise, ALL_WASTE_TYPES
+    MATCHING_ENGINE_AVAILABLE = True
+except ImportError as e:
+    print(f"Matching engine not available: {e}")
+    MATCHING_ENGINE_AVAILABLE = False
+
 # Import database manager
 try:
     from database.database_manager import db_manager
@@ -445,12 +453,15 @@ def get_environmental_impact(waste_type):
 
 @app.route('/api/match-companies', methods=['GET'])
 def match_companies():
-    """Find companies whose industry can process a given waste type"""
+    """Hybrid ML + rule-based company matching for a given waste type"""
     if not DATABASE_AVAILABLE:
         return jsonify({'error': 'Database not available'}), 501
 
     waste_type = request.args.get('waste_type', '')
     exclude_user_id = request.args.get('exclude_user_id', type=int)
+    producer_lat = request.args.get('lat', type=float)
+    producer_lng = request.args.get('lng', type=float)
+    quantity = request.args.get('quantity', 1.0, type=float)
 
     if not waste_type:
         return jsonify({'error': 'waste_type parameter is required'}), 400
@@ -460,15 +471,129 @@ def match_companies():
         if not postgres_manager:
             return jsonify({'error': 'PostgreSQL not available'}), 501
 
-        matches = postgres_manager.get_matching_companies(waste_type, exclude_user_id)
+        # If matching engine is available, use hybrid scoring
+        if MATCHING_ENGINE_AVAILABLE:
+            all_companies = postgres_manager.get_all_users_for_map()
+
+            # Default producer location to India centre if not supplied
+            plat = producer_lat or 22.5
+            plng = producer_lng or 78.5
+
+            # If exclude_user_id is set, try to get their coordinates
+            if exclude_user_id and (not producer_lat or not producer_lng):
+                user = postgres_manager.get_user_by_id(exclude_user_id)
+                if user:
+                    plat = user.get('latitude') or plat
+                    plng = user.get('longitude') or plng
+
+            matches = find_matches(
+                waste_type=waste_type,
+                producer_lat=plat,
+                producer_lng=plng,
+                companies=all_companies,
+                quantity=quantity,
+                top_k=15,
+                exclude_user_id=exclude_user_id,
+            )
+        else:
+            # Fallback to simple matching
+            matches = postgres_manager.get_matching_companies(waste_type, exclude_user_id)
+
         return jsonify({
             'waste_type': waste_type,
             'matches': matches,
-            'total': len(matches)
+            'total': len(matches),
+            'algorithm': 'hybrid_ml' if MATCHING_ENGINE_AVAILABLE else 'rule_based',
         })
     except Exception as e:
         logger.error(f"Match companies error: {e}")
         return jsonify({'error': 'Failed to find matching companies'}), 500
+
+
+@app.route('/api/smart-match', methods=['GET'])
+def smart_match():
+    """Dedicated smart matching endpoint for the Matches page.
+    Returns scored + ranked matches for the logged-in user's waste type."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 501
+    if not MATCHING_ENGINE_AVAILABLE:
+        return jsonify({'error': 'Matching engine not available'}), 501
+
+    waste_type = request.args.get('waste_type', '')
+    user_id = request.args.get('user_id', type=int)
+    quantity = request.args.get('quantity', 1.0, type=float)
+    top_k = request.args.get('top_k', 15, type=int)
+
+    if not waste_type:
+        return jsonify({'error': 'waste_type parameter is required'}), 400
+
+    try:
+        postgres_manager = db_manager.get_manager('postgresql')
+        if not postgres_manager:
+            return jsonify({'error': 'PostgreSQL not available'}), 501
+
+        # Get producer location
+        plat, plng = 22.5, 78.5
+        if user_id:
+            user = postgres_manager.get_user_by_id(user_id)
+            if user:
+                plat = user.get('latitude') or plat
+                plng = user.get('longitude') or plng
+
+        all_companies = postgres_manager.get_all_users_for_map()
+
+        matches = find_matches(
+            waste_type=waste_type,
+            producer_lat=plat,
+            producer_lng=plng,
+            companies=all_companies,
+            quantity=quantity,
+            top_k=top_k,
+            exclude_user_id=user_id,
+        )
+
+        return jsonify({
+            'waste_type': waste_type,
+            'waste_types': ALL_WASTE_TYPES,
+            'matches': matches,
+            'total': len(matches),
+            'algorithm': 'hybrid_ml',
+            'weights': {
+                'rule_based': 35,
+                'ml_similarity': 30,
+                'knn_clustering': 15,
+                'distance': 20,
+            },
+        })
+    except Exception as e:
+        logger.error(f"Smart match error: {e}")
+        return jsonify({'error': 'Failed to compute matches'}), 500
+
+
+@app.route('/api/companies/map', methods=['GET'])
+def companies_map():
+    """Get all companies with coordinates for the map view"""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 501
+
+    industry_filter = request.args.get('industry', '')
+
+    try:
+        postgres_manager = db_manager.get_manager('postgresql')
+        if not postgres_manager:
+            return jsonify({'error': 'PostgreSQL not available'}), 501
+
+        companies = postgres_manager.get_all_users_for_map(industry_filter or None)
+        industries = postgres_manager.get_distinct_industry_types()
+
+        return jsonify({
+            'companies': companies,
+            'industries': industries,
+            'total': len(companies)
+        })
+    except Exception as e:
+        logger.error(f"Companies map error: {e}")
+        return jsonify({'error': 'Failed to load companies'}), 500
 
 # Authentication Routes
 @app.route('/api/auth/register', methods=['POST'])

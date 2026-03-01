@@ -7,13 +7,11 @@ import About from './pages/About';
 import HowItWorks from './pages/HowItWorks';
 import Marketplace from './pages/Marketplace';
 import Classify from './pages/Classify';
-import Business from './pages/Business';
-import Impact from './pages/Impact';
-import Contact from './pages/Contact';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
+import Matches from './pages/Matches';
 import './App.css';
 
 function App() {
@@ -68,30 +66,6 @@ function App() {
             }
           />
           <Route
-            path="/business"
-            element={
-              <ProtectedRoute>
-                <Business />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/impact"
-            element={
-              <ProtectedRoute>
-                <Impact />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/contact"
-            element={
-              <ProtectedRoute>
-                <Contact />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/dashboard"
             element={
               <ProtectedRoute>
@@ -104,6 +78,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Profile />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/matches"
+            element={
+              <ProtectedRoute>
+                <Matches />
               </ProtectedRoute>
             }
           />

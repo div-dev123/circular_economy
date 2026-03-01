@@ -147,6 +147,50 @@ class PostgreSQLManager:
         for index_query in indexes:
             cursor.execute(index_query)
     
+    # Approximate coordinates for Indian cities used in our seed data
+    INDIAN_CITY_COORDS = {
+        'mumbai': (19.0760, 72.8777),
+        'jamnagar': (22.4707, 70.0577),
+        'pune': (18.5204, 73.8567),
+        'noida': (28.5355, 77.3910),
+        'nashik': (19.9975, 73.7898),
+        'jodhpur': (26.2389, 73.0243),
+        'chennai': (13.0827, 80.2707),
+        'thane': (19.2183, 72.9781),
+        'ahmedabad': (23.0225, 72.5714),
+        'hyderabad': (17.3850, 78.4867),
+        'panaji': (15.4909, 73.8278),
+        'renukoot': (24.2167, 83.0333),
+        'anand': (22.5645, 72.9289),
+        'bangalore': (12.9716, 77.5946),
+        'vadodara': (22.3072, 73.1812),
+        'gurugram': (28.4595, 77.0266),
+        'kochi': (9.9312, 76.2673),
+        'kolkata': (22.5726, 88.3639),
+        'nagpur': (21.1458, 79.0882),
+        'delhi': (28.6139, 77.2090),
+        'new delhi': (28.6139, 77.2090),
+        'lucknow': (26.8467, 80.9462),
+        'jaipur': (26.9124, 75.7873),
+        'bhopal': (23.2599, 77.4126),
+        'indore': (22.7196, 75.8577),
+        'chandigarh': (30.7333, 76.7794),
+        'coimbatore': (11.0168, 76.9558),
+        'visakhapatnam': (17.6868, 83.2185),
+        'surat': (21.1702, 72.8311),
+        'patna': (25.6093, 85.1376),
+    }
+
+    def _geocode_location(self, location: str):
+        """Return (lat, lng) for a location string like 'Mumbai, Maharashtra'"""
+        if not location:
+            return None, None
+        city = location.split(',')[0].strip().lower()
+        coords = self.INDIAN_CITY_COORDS.get(city)
+        if coords:
+            return coords
+        return None, None
+
     def _migrate_tables(self):
         """Run migrations to update table schemas"""
         cursor = self.connection.cursor()
@@ -157,7 +201,9 @@ class PostgreSQLManager:
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS listings_count INTEGER DEFAULT 0",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS waste_processed_tons DECIMAL(15,2) DEFAULT 0.00",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS co2_saved_tons DECIMAL(15,2) DEFAULT 0.00",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS cost_savings DECIMAL(15,2) DEFAULT 0.00"
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS cost_savings DECIMAL(15,2) DEFAULT 0.00",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION"
         ]
         
         for migration in migrations:
@@ -165,6 +211,20 @@ class PostgreSQLManager:
                 cursor.execute(migration)
             except Exception as e:
                 logger.warning(f"Migration skipped (column may already exist): {e}")
+
+        # Backfill lat/lng for existing users who have a location but no coordinates
+        try:
+            cursor.execute("SELECT id, location FROM users WHERE location IS NOT NULL AND latitude IS NULL")
+            rows = cursor.fetchall()
+            for row in rows:
+                lat, lng = self._geocode_location(row['location'])
+                if lat and lng:
+                    cursor.execute("UPDATE users SET latitude = %s, longitude = %s WHERE id = %s",
+                                   (lat, lng, row['id']))
+            if rows:
+                logger.info(f"Backfilled coordinates for {len(rows)} users")
+        except Exception as e:
+            logger.warning(f"Coordinate backfill skipped: {e}")
     
     # User Management
     def create_user(self, user_data: Dict[str, Any]) -> int:
@@ -491,6 +551,13 @@ class PostgreSQLManager:
                 update_fields.append(f"{field} = %s")
                 values.append(user_data[field])
         
+        # Auto-geocode if location changed
+        if 'location' in user_data:
+            lat, lng = self._geocode_location(user_data['location'])
+            if lat and lng:
+                update_fields.extend(['latitude = %s', 'longitude = %s'])
+                values.extend([lat, lng])
+        
         if not update_fields:
             return False
         
@@ -508,3 +575,30 @@ class PostgreSQLManager:
         except Exception as e:
             logger.error(f"Error updating user: {e}")
             return False
+
+    def get_all_users_for_map(self, industry_filter: str = None) -> List[Dict]:
+        """Get all users with coordinates for the map view"""
+        cursor = self.connection.cursor()
+        query = """
+            SELECT id, company_name, industry_type, location, latitude, longitude,
+                   classifications_count, listings_count, email
+            FROM users
+            WHERE is_active = TRUE AND latitude IS NOT NULL AND longitude IS NOT NULL
+        """
+        params = []
+        if industry_filter and industry_filter != 'all':
+            query += " AND industry_type = %s"
+            params.append(industry_filter)
+        query += " ORDER BY company_name"
+        cursor.execute(query, params)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_distinct_industry_types(self) -> List[str]:
+        """Get all distinct industry types from users table"""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT DISTINCT industry_type FROM users
+            WHERE industry_type IS NOT NULL AND is_active = TRUE
+            ORDER BY industry_type
+        """)
+        return [row['industry_type'] for row in cursor.fetchall()]
