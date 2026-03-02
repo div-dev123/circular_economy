@@ -637,6 +637,46 @@ class PostgreSQLManager:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_conv_users ON conversations(user1_id, user2_id)")
 
+        # Deals table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS deals (
+                id SERIAL PRIMARY KEY,
+                conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                proposer_id INTEGER NOT NULL REFERENCES users(id),
+                responder_id INTEGER NOT NULL REFERENCES users(id),
+                waste_type VARCHAR(100) NOT NULL,
+                quantity DECIMAL(15,2) NOT NULL DEFAULT 0,
+                unit VARCHAR(30) NOT NULL DEFAULT 'tonnes',
+                price_per_unit DECIMAL(15,2) NOT NULL DEFAULT 0,
+                total_price DECIMAL(15,2) NOT NULL DEFAULT 0,
+                direction VARCHAR(20) NOT NULL DEFAULT 'selling',
+                status VARCHAR(20) NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                accepted_at TIMESTAMP,
+                completed_at TIMESTAMP,
+                cancelled_at TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_conv ON deals(conversation_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_status ON deals(status)")
+
+        # Notifications table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS notifications (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                type VARCHAR(50) NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                body TEXT,
+                link VARCHAR(255),
+                related_id INTEGER,
+                sender_id INTEGER REFERENCES users(id),
+                is_read BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, is_read, created_at DESC)")
+
     def get_or_create_conversation(self, user_id: int, other_id: int, waste_context: str = '') -> Dict:
         """Return existing conversation between two users, or create one."""
         lo, hi = sorted([user_id, other_id])
@@ -744,3 +784,232 @@ class PostgreSQLManager:
               AND m.sender_id != %s AND m.is_read = FALSE
         """, (user_id, user_id, user_id))
         return cursor.fetchone()['cnt']
+
+    # ─────────────────────────────────────────────
+    #  Notifications
+    # ─────────────────────────────────────────────
+
+    def create_notification(self, user_id: int, notif_type: str, title: str,
+                            body: str = '', link: str = '', related_id: int = None,
+                            sender_id: int = None) -> Dict:
+        """Create a notification for a user."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT INTO notifications (user_id, type, title, body, link, related_id, sender_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *
+        """, (user_id, notif_type, title, body, link, related_id, sender_id))
+        row = dict(cursor.fetchone())
+        if row.get('created_at'):
+            row['created_at'] = row['created_at'].isoformat()
+        return row
+
+    def get_notifications(self, user_id: int, limit: int = 30, unread_only: bool = False) -> List[Dict]:
+        """Fetch recent notifications for a user."""
+        cursor = self.connection.cursor()
+        query = """
+            SELECT n.*, u.company_name AS sender_name
+            FROM notifications n
+            LEFT JOIN users u ON n.sender_id = u.id
+            WHERE n.user_id = %s
+        """
+        params = [user_id]
+        if unread_only:
+            query += " AND n.is_read = FALSE"
+        query += " ORDER BY n.created_at DESC LIMIT %s"
+        params.append(limit)
+        cursor.execute(query, params)
+        results = []
+        for row in cursor.fetchall():
+            r = dict(row)
+            if r.get('created_at'):
+                r['created_at'] = r['created_at'].isoformat()
+            results.append(r)
+        return results
+
+    def get_notification_count(self, user_id: int) -> int:
+        """Count unread notifications."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT COUNT(*) AS cnt FROM notifications WHERE user_id = %s AND is_read = FALSE", (user_id,))
+        return cursor.fetchone()['cnt']
+
+    def mark_notification_read(self, notif_id: int, user_id: int) -> bool:
+        """Mark a single notification as read."""
+        cursor = self.connection.cursor()
+        cursor.execute("UPDATE notifications SET is_read = TRUE WHERE id = %s AND user_id = %s", (notif_id, user_id))
+        return cursor.rowcount > 0
+
+    def mark_all_notifications_read(self, user_id: int) -> int:
+        """Mark all notifications as read for a user. Returns count updated."""
+        cursor = self.connection.cursor()
+        cursor.execute("UPDATE notifications SET is_read = TRUE WHERE user_id = %s AND is_read = FALSE", (user_id,))
+        return cursor.rowcount
+
+    # ─────────────────────────────────────────────
+    #  Deal Management
+    # ─────────────────────────────────────────────
+
+    def create_deal(self, data: Dict[str, Any]) -> Dict:
+        """Create a new active deal in a conversation."""
+        cursor = self.connection.cursor()
+        total = float(data.get('quantity', 0)) * float(data.get('price_per_unit', 0))
+        cursor.execute("""
+            INSERT INTO deals
+                (conversation_id, proposer_id, responder_id, waste_type,
+                 quantity, unit, price_per_unit, total_price, direction, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'active')
+            RETURNING *
+        """, (
+            data['conversation_id'],
+            data['proposer_id'],
+            data['responder_id'],
+            data['waste_type'],
+            data.get('quantity', 0),
+            data.get('unit', 'tonnes'),
+            data.get('price_per_unit', 0),
+            total,
+            data.get('direction', 'selling'),
+        ))
+        deal = dict(cursor.fetchone())
+        for k in ('created_at', 'accepted_at', 'completed_at', 'cancelled_at'):
+            if deal.get(k) and not isinstance(deal[k], str):
+                deal[k] = deal[k].isoformat()
+        return deal
+
+    def get_deals_for_conversation(self, conversation_id: int) -> List[Dict]:
+        """Get all deals in a conversation."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT d.*, 
+                   p.company_name AS proposer_name,
+                   r.company_name AS responder_name
+            FROM deals d
+            JOIN users p ON d.proposer_id = p.id
+            JOIN users r ON d.responder_id = r.id
+            WHERE d.conversation_id = %s
+            ORDER BY d.created_at DESC
+        """, (conversation_id,))
+        results = []
+        for row in cursor.fetchall():
+            r = dict(row)
+            for k in ('created_at', 'accepted_at', 'completed_at', 'cancelled_at'):
+                if r.get(k) and not isinstance(r[k], str):
+                    r[k] = r[k].isoformat()
+            results.append(r)
+        return results
+
+    def get_deal_by_id(self, deal_id: int) -> Optional[Dict]:
+        """Get a single deal by ID."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT d.*, 
+                   p.company_name AS proposer_name,
+                   r.company_name AS responder_name
+            FROM deals d
+            JOIN users p ON d.proposer_id = p.id
+            JOIN users r ON d.responder_id = r.id
+            WHERE d.id = %s
+        """, (deal_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        deal = dict(row)
+        for k in ('created_at', 'accepted_at', 'completed_at', 'cancelled_at'):
+            if deal.get(k) and not isinstance(deal[k], str):
+                deal[k] = deal[k].isoformat()
+        return deal
+
+    def update_deal_status(self, deal_id: int, new_status: str, user_id: int) -> Optional[Dict]:
+        """Update deal status (accept, complete, cancel). Returns updated deal or None."""
+        cursor = self.connection.cursor()
+        # Fetch existing deal
+        cursor.execute("SELECT * FROM deals WHERE id = %s", (deal_id,))
+        deal = cursor.fetchone()
+        if not deal:
+            return None
+        deal = dict(deal)
+
+        # Permission checks — either party can complete or cancel active deals
+        if new_status == 'completed':
+            if deal['status'] != 'active':
+                return None
+            if user_id not in (deal['proposer_id'], deal['responder_id']):
+                return None
+            cursor.execute("UPDATE deals SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = %s", (deal_id,))
+
+        elif new_status == 'cancelled':
+            if deal['status'] != 'active':
+                return None
+            if user_id not in (deal['proposer_id'], deal['responder_id']):
+                return None
+            cursor.execute("UPDATE deals SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP WHERE id = %s", (deal_id,))
+
+        else:
+            return None
+
+        return self.get_deal_by_id(deal_id)
+
+    def apply_deal_impact(self, deal_id: int) -> Dict:
+        """
+        When a deal is completed, update both users' stats:
+          - waste_processed_tons += quantity
+          - co2_saved_tons += quantity * 0.5 (rough estimate)
+          - cost_savings += total_price (for buyer) / total_price * 0.15 (for seller)
+        Returns the impact dict.
+        """
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT * FROM deals WHERE id = %s AND status = 'completed'", (deal_id,))
+        deal = cursor.fetchone()
+        if not deal:
+            return {}
+        deal = dict(deal)
+
+        qty = float(deal['quantity'] or 0)
+        total = float(deal['total_price'] or 0)
+        co2 = round(qty * 0.5, 2)  # ~0.5t CO₂ saved per tonne diverted from landfill
+
+        # Both parties get credit for waste processed & CO₂
+        for uid in [deal['proposer_id'], deal['responder_id']]:
+            cursor.execute("""
+                UPDATE users SET
+                    waste_processed_tons = COALESCE(waste_processed_tons, 0) + %s,
+                    co2_saved_tons = COALESCE(co2_saved_tons, 0) + %s,
+                    cost_savings = COALESCE(cost_savings, 0) + %s
+                WHERE id = %s
+            """, (qty, co2, total, uid))
+
+        return {
+            'deal_id': deal_id,
+            'waste_type': deal['waste_type'],
+            'quantity': qty,
+            'co2_saved': co2,
+            'cost_impact': total,
+            'proposer_id': deal['proposer_id'],
+            'responder_id': deal['responder_id'],
+        }
+
+    def get_user_deals(self, user_id: int, status: str = None) -> List[Dict]:
+        """Get all deals a user is part of, optionally filtered by status."""
+        cursor = self.connection.cursor()
+        query = """
+            SELECT d.*,
+                   p.company_name AS proposer_name,
+                   r.company_name AS responder_name
+            FROM deals d
+            JOIN users p ON d.proposer_id = p.id
+            JOIN users r ON d.responder_id = r.id
+            WHERE (d.proposer_id = %s OR d.responder_id = %s)
+        """
+        params = [user_id, user_id]
+        if status:
+            query += " AND d.status = %s"
+            params.append(status)
+        query += " ORDER BY d.created_at DESC"
+        cursor.execute(query, params)
+        results = []
+        for row in cursor.fetchall():
+            r = dict(row)
+            for k in ('created_at', 'accepted_at', 'completed_at', 'cancelled_at'):
+                if r.get(k) and not isinstance(r[k], str):
+                    r[k] = r[k].isoformat()
+            results.append(r)
+        return results

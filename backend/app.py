@@ -344,6 +344,18 @@ def classify_waste():
                 pass
 
             try:
+                # POSTGRESQL: Increment user's classification count
+                if user_id:
+                    pg = db_manager.get_manager('postgresql')
+                    if pg:
+                        cur = pg.connection.cursor()
+                        cur.execute("UPDATE users SET classifications_count = COALESCE(classifications_count, 0) + 1 WHERE id = %s", (int(user_id),))
+                        pg.connection.commit()
+                        print(f"🐘 POSTGRESQL: Incremented classifications_count for user {user_id}")
+            except Exception:
+                pass
+
+            try:
                 # MONGODB: Store full classification document for history
                 mongo_mgr = db_manager.get_manager('mongodb')
                 if mongo_mgr:
@@ -1029,6 +1041,27 @@ def send_message(conv_id):
         except Exception:
             pass
 
+        # ── Notification for the recipient ──
+        try:
+            cur = pg.connection.cursor()
+            cur.execute("SELECT user1_id, user2_id FROM conversations WHERE id = %s", (conv_id,))
+            conv_row = cur.fetchone()
+            if conv_row:
+                recipient_id = conv_row['user2_id'] if conv_row['user1_id'] == sender_id else conv_row['user1_id']
+                sender_name = msg.get('sender_name', 'Someone')
+                preview = content[:60] + ('…' if len(content) > 60 else '')
+                pg.create_notification(
+                    user_id=recipient_id,
+                    notif_type='message',
+                    title=f'New message from {sender_name}',
+                    body=preview,
+                    link=f'/chat?conv={conv_id}',
+                    related_id=conv_id,
+                    sender_id=sender_id,
+                )
+        except Exception:
+            pass
+
         return jsonify({'message': msg}), 201
     except Exception as e:
         logger.error(f"Chat send error: {e}")
@@ -1052,6 +1085,603 @@ def unread_count():
     except Exception as e:
         logger.error(f"Unread count error: {e}")
         return jsonify({'error': 'Failed to get unread count'}), 500
+
+# ─────────────────────────────────────────────────
+#  Deals API
+# ─────────────────────────────────────────────────
+
+@app.route('/api/deals', methods=['POST'])
+def create_deal():
+    """Create a new deal proposal."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 501
+    data = request.get_json()
+    required = ['conversation_id', 'proposer_id', 'responder_id', 'waste_type', 'quantity', 'price_per_unit']
+    for field in required:
+        if not data.get(field) and data.get(field) != 0:
+            return jsonify({'error': f'{field} is required'}), 400
+    try:
+        pg = db_manager.managers.get('postgresql')
+        if not pg:
+            return jsonify({'error': 'PostgreSQL not available'}), 501
+        deal = pg.create_deal(data)
+
+        # ── NoSQL: log deal proposal ──
+        try:
+            mongo_mgr = db_manager.get_manager('mongodb')
+            if mongo_mgr:
+                mongo_mgr.db.activity_feed.insert_one({
+                    'type': 'deal_proposed',
+                    'user_id': data['proposer_id'],
+                    'deal_id': deal['id'],
+                    'waste_type': data['waste_type'],
+                    'quantity': float(data.get('quantity', 0)),
+                    'total_price': float(deal.get('total_price', 0)),
+                    'created_at': datetime.utcnow(),
+                })
+        except Exception:
+            pass
+        try:
+            cass_mgr = db_manager.get_manager('cassandra')
+            if cass_mgr:
+                cass_mgr.record_analytics_metric(
+                    metric_name='deal_proposed',
+                    timestamp=datetime.utcnow(),
+                    dimension1=data['waste_type'],
+                    dimension2=f"{data['proposer_id']}->{data['responder_id']}",
+                    value=float(data.get('quantity', 0)),
+                )
+        except Exception:
+            pass
+        try:
+            redis_mgr = db_manager.get_manager('redis')
+            if redis_mgr:
+                redis_mgr.client.incr('stats:deals:proposed')
+        except Exception:
+            pass
+
+        # ── Notification for the responder ──
+        try:
+            proposer_name = ''
+            cur = pg.connection.cursor()
+            cur.execute("SELECT company_name FROM users WHERE id = %s", (data['proposer_id'],))
+            row = cur.fetchone()
+            if row:
+                proposer_name = row['company_name']
+            pg.create_notification(
+                user_id=data['responder_id'],
+                notif_type='deal_created',
+                title=f'New deal from {proposer_name}',
+                body=f"{data['waste_type']} — {data.get('quantity', 0)} {data.get('unit', 'tonnes')}",
+                link=f"/chat?conv={data['conversation_id']}",
+                related_id=deal['id'],
+                sender_id=data['proposer_id'],
+            )
+        except Exception:
+            pass
+
+        return jsonify({'deal': deal}), 201
+    except Exception as e:
+        logger.error(f"Create deal error: {e}")
+        return jsonify({'error': 'Failed to create deal'}), 500
+
+
+@app.route('/api/deals/conversation/<int:conv_id>', methods=['GET'])
+def get_conversation_deals(conv_id):
+    """Get all deals for a conversation."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 501
+    try:
+        pg = db_manager.managers.get('postgresql')
+        if not pg:
+            return jsonify({'error': 'PostgreSQL not available'}), 501
+        deals = pg.get_deals_for_conversation(conv_id)
+        return jsonify({'deals': deals})
+    except Exception as e:
+        logger.error(f"Get deals error: {e}")
+        return jsonify({'error': 'Failed to load deals'}), 500
+
+
+@app.route('/api/deals/<int:deal_id>/accept', methods=['PUT'])
+def accept_deal(deal_id):
+    """Accept a deal proposal (responder only)."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 501
+    data = request.get_json()
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    try:
+        pg = db_manager.managers.get('postgresql')
+        if not pg:
+            return jsonify({'error': 'PostgreSQL not available'}), 501
+        deal = pg.update_deal_status(deal_id, 'accepted', user_id)
+        if not deal:
+            return jsonify({'error': 'Cannot accept this deal'}), 400
+
+        # ── NoSQL: log deal acceptance ──
+        try:
+            mongo_mgr = db_manager.get_manager('mongodb')
+            if mongo_mgr:
+                mongo_mgr.db.activity_feed.insert_one({
+                    'type': 'deal_accepted',
+                    'user_id': user_id,
+                    'deal_id': deal_id,
+                    'waste_type': deal.get('waste_type'),
+                    'created_at': datetime.utcnow(),
+                })
+        except Exception:
+            pass
+        try:
+            redis_mgr = db_manager.get_manager('redis')
+            if redis_mgr:
+                redis_mgr.client.incr('stats:deals:accepted')
+        except Exception:
+            pass
+
+        return jsonify({'deal': deal})
+    except Exception as e:
+        logger.error(f"Accept deal error: {e}")
+        return jsonify({'error': 'Failed to accept deal'}), 500
+
+
+@app.route('/api/deals/<int:deal_id>/reject', methods=['PUT'])
+def reject_deal(deal_id):
+    """Reject a deal proposal (responder only)."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 501
+    data = request.get_json()
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    try:
+        pg = db_manager.managers.get('postgresql')
+        if not pg:
+            return jsonify({'error': 'PostgreSQL not available'}), 501
+        deal = pg.update_deal_status(deal_id, 'rejected', user_id)
+        if not deal:
+            return jsonify({'error': 'Cannot reject this deal'}), 400
+        return jsonify({'deal': deal})
+    except Exception as e:
+        logger.error(f"Reject deal error: {e}")
+        return jsonify({'error': 'Failed to reject deal'}), 500
+
+
+@app.route('/api/deals/<int:deal_id>/complete', methods=['PUT'])
+def complete_deal(deal_id):
+    """Mark a deal as completed and calculate impact."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 501
+    data = request.get_json()
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    try:
+        pg = db_manager.managers.get('postgresql')
+        if not pg:
+            return jsonify({'error': 'PostgreSQL not available'}), 501
+        deal = pg.update_deal_status(deal_id, 'completed', user_id)
+        if not deal:
+            return jsonify({'error': 'Cannot complete this deal'}), 400
+
+        # ── Apply impact to both users ──
+        impact = pg.apply_deal_impact(deal_id)
+
+        # ── NoSQL: log deal completion ──
+        try:
+            mongo_mgr = db_manager.get_manager('mongodb')
+            if mongo_mgr:
+                for uid in [deal['proposer_id'], deal['responder_id']]:
+                    mongo_mgr.db.activity_feed.insert_one({
+                        'type': 'deal_completed',
+                        'user_id': uid,
+                        'deal_id': deal_id,
+                        'waste_type': deal.get('waste_type'),
+                        'quantity': float(deal.get('quantity', 0)),
+                        'total_price': float(deal.get('total_price', 0)),
+                        'co2_saved': impact.get('co2_saved', 0),
+                        'created_at': datetime.utcnow(),
+                    })
+        except Exception:
+            pass
+        try:
+            cass_mgr = db_manager.get_manager('cassandra')
+            if cass_mgr:
+                cass_mgr.record_analytics_metric(
+                    metric_name='deal_completed',
+                    timestamp=datetime.utcnow(),
+                    dimension1=deal.get('waste_type', 'unknown'),
+                    dimension2=f"{deal['proposer_id']}->{deal['responder_id']}",
+                    value=float(deal.get('quantity', 0)),
+                )
+        except Exception:
+            pass
+        try:
+            neo4j_mgr = db_manager.get_manager('neo4j')
+            if neo4j_mgr:
+                with neo4j_mgr.driver.session() as sess:
+                    sess.run(
+                        "MERGE (a:Company {id: $pid}) "
+                        "MERGE (b:Company {id: $rid}) "
+                        "MERGE (a)-[r:DEALT_WITH]->(b) "
+                        "ON CREATE SET r.waste_type = $wt, r.quantity = $qty, r.created_at = timestamp() "
+                        "ON MATCH SET r.total_deals = coalesce(r.total_deals, 0) + 1, "
+                        "r.total_quantity = coalesce(r.total_quantity, 0) + $qty",
+                        pid=deal['proposer_id'], rid=deal['responder_id'],
+                        wt=deal.get('waste_type', ''), qty=float(deal.get('quantity', 0)),
+                    )
+        except Exception:
+            pass
+        try:
+            redis_mgr = db_manager.get_manager('redis')
+            if redis_mgr:
+                redis_mgr.client.incr('stats:deals:completed')
+                redis_mgr.client.incrbyfloat('stats:deals:total_quantity', float(deal.get('quantity', 0)))
+                redis_mgr.client.incrbyfloat('stats:deals:total_value', float(deal.get('total_price', 0)))
+        except Exception:
+            pass
+
+        # ── Notification for the other party ──
+        try:
+            other_id = deal['responder_id'] if deal['proposer_id'] == user_id else deal['proposer_id']
+            user_name = ''
+            cur = pg.connection.cursor()
+            cur.execute("SELECT company_name FROM users WHERE id = %s", (user_id,))
+            row = cur.fetchone()
+            if row:
+                user_name = row['company_name']
+            pg.create_notification(
+                user_id=other_id,
+                notif_type='deal_completed',
+                title=f'Deal completed by {user_name}',
+                body=f"{deal.get('waste_type', '')} — ₹{float(deal.get('total_price', 0)):,.0f}",
+                link=f"/chat?conv={deal.get('conversation_id')}",
+                related_id=deal_id,
+                sender_id=user_id,
+            )
+        except Exception:
+            pass
+
+        return jsonify({'deal': deal, 'impact': impact})
+    except Exception as e:
+        logger.error(f"Complete deal error: {e}")
+        return jsonify({'error': 'Failed to complete deal'}), 500
+
+
+@app.route('/api/deals/<int:deal_id>/cancel', methods=['PUT'])
+def cancel_deal(deal_id):
+    """Cancel a deal."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 501
+    data = request.get_json()
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    try:
+        pg = db_manager.managers.get('postgresql')
+        if not pg:
+            return jsonify({'error': 'PostgreSQL not available'}), 501
+        deal = pg.update_deal_status(deal_id, 'cancelled', user_id)
+        if not deal:
+            return jsonify({'error': 'Cannot cancel this deal'}), 400
+
+        # ── Notification for the other party ──
+        try:
+            other_id = deal['responder_id'] if deal['proposer_id'] == user_id else deal['proposer_id']
+            user_name = ''
+            cur = pg.connection.cursor()
+            cur.execute("SELECT company_name FROM users WHERE id = %s", (user_id,))
+            row = cur.fetchone()
+            if row:
+                user_name = row['company_name']
+            pg.create_notification(
+                user_id=other_id,
+                notif_type='deal_cancelled',
+                title=f'Deal cancelled by {user_name}',
+                body=f"{deal.get('waste_type', '')} — ₹{float(deal.get('total_price', 0)):,.0f}",
+                link=f"/chat?conv={deal.get('conversation_id')}",
+                related_id=deal_id,
+                sender_id=user_id,
+            )
+        except Exception:
+            pass
+
+        return jsonify({'deal': deal})
+    except Exception as e:
+        logger.error(f"Cancel deal error: {e}")
+        return jsonify({'error': 'Failed to cancel deal'}), 500
+
+
+@app.route('/api/deals/user/<int:user_id>', methods=['GET'])
+def get_user_deals(user_id):
+    """Get all deals for a user, optionally filtered by status."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 501
+    status = request.args.get('status')
+    try:
+        pg = db_manager.managers.get('postgresql')
+        if not pg:
+            return jsonify({'error': 'PostgreSQL not available'}), 501
+        deals = pg.get_user_deals(user_id, status)
+        return jsonify({'deals': deals, 'total': len(deals)})
+    except Exception as e:
+        logger.error(f"User deals error: {e}")
+        return jsonify({'error': 'Failed to load user deals'}), 500
+
+
+@app.route('/api/deals/analytics/<int:user_id>', methods=['GET'])
+def deal_analytics(user_id):
+    """Rich analytics for a user's deal history — aggregated from multiple databases."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 501
+    try:
+        pg = db_manager.managers.get('postgresql')
+        if not pg:
+            return jsonify({'error': 'PostgreSQL not available'}), 501
+
+        cur = pg.connection.cursor()
+        data = {'stats': {}, 'by_waste_type': [], 'by_month': [], 'partners': [], 'deals': []}
+
+        # ── Overall stats ──
+        cur.execute("""
+            SELECT
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE status = 'active')    AS active,
+                COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+                COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled,
+                COALESCE(SUM(quantity)    FILTER (WHERE status = 'completed'), 0) AS waste_traded,
+                COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) AS total_value,
+                COALESCE(SUM(quantity * 0.5) FILTER (WHERE status = 'completed'), 0) AS co2_saved
+            FROM deals
+            WHERE proposer_id = %s OR responder_id = %s
+        """, (user_id, user_id))
+        row = cur.fetchone()
+        data['stats'] = {
+            'total':        row['total'],
+            'active':       row['active'],
+            'completed':    row['completed'],
+            'cancelled':    row['cancelled'],
+            'waste_traded': float(row['waste_traded']),
+            'total_value':  float(row['total_value']),
+            'co2_saved':    round(float(row['co2_saved']), 2),
+        }
+
+        # ── Breakdown by waste type ──
+        cur.execute("""
+            SELECT waste_type,
+                   COUNT(*) AS count,
+                   COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+                   COALESCE(SUM(quantity) FILTER (WHERE status = 'completed'), 0) AS qty,
+                   COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) AS value
+            FROM deals
+            WHERE proposer_id = %s OR responder_id = %s
+            GROUP BY waste_type ORDER BY count DESC
+        """, (user_id, user_id))
+        data['by_waste_type'] = [
+            {'waste_type': r['waste_type'], 'count': r['count'], 'completed': r['completed'],
+             'qty': float(r['qty']), 'value': float(r['value'])} for r in cur.fetchall()
+        ]
+
+        # ── Monthly trend (last 12 months) ──
+        cur.execute("""
+            SELECT TO_CHAR(created_at, 'YYYY-MM') AS month,
+                   COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+                   COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) AS value
+            FROM deals
+            WHERE (proposer_id = %s OR responder_id = %s)
+              AND created_at >= NOW() - INTERVAL '12 months'
+            GROUP BY month ORDER BY month
+        """, (user_id, user_id))
+        data['by_month'] = [
+            {'month': r['month'], 'total': r['total'], 'completed': r['completed'],
+             'value': float(r['value'])} for r in cur.fetchall()
+        ]
+
+        # ── Top partners ──
+        cur.execute("""
+            SELECT partner_id, u.company_name, u.industry_type, u.location,
+                   COUNT(*) AS deal_count,
+                   COUNT(*) FILTER (WHERE d.status = 'completed') AS completed,
+                   COALESCE(SUM(d.total_price) FILTER (WHERE d.status = 'completed'), 0) AS total_value
+            FROM (
+                SELECT responder_id AS partner_id, id, status, total_price
+                FROM deals WHERE proposer_id = %s
+                UNION ALL
+                SELECT proposer_id AS partner_id, id, status, total_price
+                FROM deals WHERE responder_id = %s
+            ) d
+            JOIN users u ON d.partner_id = u.id
+            GROUP BY partner_id, u.company_name, u.industry_type, u.location
+            ORDER BY deal_count DESC
+            LIMIT 10
+        """, (user_id, user_id))
+        data['partners'] = [
+            {'id': r['partner_id'], 'name': r['company_name'], 'industry': r['industry_type'],
+             'location': r['location'], 'deal_count': r['deal_count'],
+             'completed': r['completed'], 'total_value': float(r['total_value'])} for r in cur.fetchall()
+        ]
+
+        # ── Full deal list ──
+        deals = pg.get_user_deals(user_id)
+        data['deals'] = deals
+
+        # ── Neo4j: relationship graph data ──
+        try:
+            neo4j_mgr = db_manager.get_manager('neo4j')
+            if neo4j_mgr:
+                with neo4j_mgr.driver.session() as sess:
+                    result = sess.run(
+                        "MATCH (a:Company {id: $uid})-[r:DEALT_WITH]-(b:Company) "
+                        "RETURN b.id AS partner_id, r.waste_type AS waste_type, "
+                        "coalesce(r.total_deals, 1) AS deals, coalesce(r.total_quantity, 0) AS qty",
+                        uid=user_id
+                    )
+                    data['graph_edges'] = [dict(rec) for rec in result]
+        except Exception:
+            data['graph_edges'] = []
+
+        # ── Cassandra: Time-series deal event timeline ──
+        try:
+            cass_mgr = db_manager.get_manager('cassandra')
+            if cass_mgr:
+                events = []
+                for metric in ['deal_proposed', 'deal_completed']:
+                    rows = cass_mgr.get_analytics_metrics(
+                        metric_name=metric,
+                        start_time=datetime.utcnow() - timedelta(days=180),
+                        end_time=datetime.utcnow(),
+                        limit=200,
+                    )
+                    for r in rows:
+                        d2 = r.get('dimension2', '')
+                        parts = d2.split('->')
+                        if str(user_id) in parts:
+                            events.append({
+                                'type': metric,
+                                'timestamp': r.get('timestamp'),
+                                'waste_type': r.get('dimension1'),
+                                'quantity': r.get('value', 0),
+                            })
+                events.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+                data['cassandra_timeline'] = events[:50]
+            else:
+                data['cassandra_timeline'] = []
+        except Exception as e:
+            logger.warning(f"Cassandra timeline error: {e}")
+            data['cassandra_timeline'] = []
+
+        # ── MongoDB: Recent activity feed ──
+        try:
+            mongo_mgr = db_manager.get_manager('mongodb')
+            if mongo_mgr:
+                activities = list(mongo_mgr.db.activity_feed.find(
+                    {'user_id': user_id},
+                    {'_id': 0}
+                ).sort('created_at', -1).limit(20))
+                for a in activities:
+                    if isinstance(a.get('created_at'), datetime):
+                        a['created_at'] = a['created_at'].isoformat()
+                data['mongo_activity'] = activities
+            else:
+                data['mongo_activity'] = []
+        except Exception as e:
+            logger.warning(f"MongoDB activity error: {e}")
+            data['mongo_activity'] = []
+
+        # ── Redis: Live platform-wide deal counters ──
+        try:
+            redis_mgr = db_manager.get_manager('redis')
+            if redis_mgr:
+                data['redis_live'] = {
+                    'total_proposed': int(redis_mgr.client.get('stats:deals:proposed') or 0),
+                    'total_completed': int(redis_mgr.client.get('stats:deals:completed') or 0),
+                    'total_quantity': round(float(redis_mgr.client.get('stats:deals:total_quantity') or 0), 1),
+                    'total_value': round(float(redis_mgr.client.get('stats:deals:total_value') or 0), 2),
+                }
+            else:
+                data['redis_live'] = {}
+        except Exception as e:
+            logger.warning(f"Redis live stats error: {e}")
+            data['redis_live'] = {}
+
+        # ── DB source metadata ──
+        data['db_sources'] = {
+            'postgresql': bool(pg),
+            'neo4j': bool(db_manager.get_manager('neo4j')),
+            'cassandra': bool(db_manager.get_manager('cassandra')),
+            'mongodb': bool(db_manager.get_manager('mongodb')),
+            'redis': bool(db_manager.get_manager('redis')),
+        }
+
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Deal analytics error: {e}")
+        return jsonify({'error': 'Failed to load deal analytics'}), 500
+
+
+# ─────────────────────────────────────────────────
+#  Notifications API
+# ─────────────────────────────────────────────────
+
+@app.route('/api/notifications', methods=['GET'])
+def get_notifications():
+    """Get notifications for a user."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 501
+    user_id = request.args.get('user_id', type=int)
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    unread_only = request.args.get('unread_only', 'false').lower() == 'true'
+    limit = request.args.get('limit', 30, type=int)
+    try:
+        pg = db_manager.managers.get('postgresql')
+        if not pg:
+            return jsonify({'error': 'PostgreSQL not available'}), 501
+        notifications = pg.get_notifications(user_id, limit=limit, unread_only=unread_only)
+        count = pg.get_notification_count(user_id)
+        return jsonify({'notifications': notifications, 'unread_count': count})
+    except Exception as e:
+        logger.error(f"Get notifications error: {e}")
+        return jsonify({'error': 'Failed to load notifications'}), 500
+
+
+@app.route('/api/notifications/count', methods=['GET'])
+def notification_count():
+    """Get unread notification count for a user (lightweight polling endpoint)."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'unread': 0})
+    user_id = request.args.get('user_id', type=int)
+    if not user_id:
+        return jsonify({'unread': 0})
+    try:
+        pg = db_manager.managers.get('postgresql')
+        if not pg:
+            return jsonify({'unread': 0})
+        return jsonify({'unread': pg.get_notification_count(user_id)})
+    except Exception:
+        return jsonify({'unread': 0})
+
+
+@app.route('/api/notifications/<int:notif_id>/read', methods=['PUT'])
+def mark_notification_read(notif_id):
+    """Mark a single notification as read."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 501
+    data = request.get_json() or {}
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    try:
+        pg = db_manager.managers.get('postgresql')
+        if not pg:
+            return jsonify({'error': 'PostgreSQL not available'}), 501
+        pg.mark_notification_read(notif_id, user_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Mark notification read error: {e}")
+        return jsonify({'error': 'Failed'}), 500
+
+
+@app.route('/api/notifications/read-all', methods=['PUT'])
+def mark_all_notifications_read():
+    """Mark all notifications as read for a user."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 501
+    data = request.get_json() or {}
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    try:
+        pg = db_manager.managers.get('postgresql')
+        if not pg:
+            return jsonify({'error': 'PostgreSQL not available'}), 501
+        count = pg.mark_all_notifications_read(user_id)
+        return jsonify({'success': True, 'marked': count})
+    except Exception as e:
+        logger.error(f"Mark all read error: {e}")
+        return jsonify({'error': 'Failed'}), 500
+
 
 # ─────────────────────────────────────────────────
 #  Analytics Dashboard API  (aggregates from ALL 5 databases)
@@ -1083,15 +1713,25 @@ def analytics_dashboard():
             data['platform']['total_conversations'] = cur.fetchone()['cnt']
             cur.execute("SELECT COUNT(*) AS cnt FROM messages")
             data['platform']['total_messages'] = cur.fetchone()['cnt']
+            # Deal stats
+            cur.execute("SELECT COUNT(*) AS cnt FROM deals")
+            data['platform']['total_deals'] = cur.fetchone()['cnt']
+            cur.execute("SELECT COUNT(*) AS cnt FROM deals WHERE status = 'completed'")
+            data['platform']['completed_deals'] = cur.fetchone()['cnt']
+            cur.execute("SELECT COALESCE(SUM(quantity), 0) AS total FROM deals WHERE status = 'completed'")
+            data['platform']['deals_waste_total'] = float(cur.fetchone()['total'])
+            cur.execute("SELECT COALESCE(SUM(total_price), 0) AS total FROM deals WHERE status = 'completed'")
+            data['platform']['deals_value_total'] = float(cur.fetchone()['total'])
             if user_id:
-                cur.execute("SELECT classifications_count, listings_count, waste_processed_tons, co2_saved_tons, cost_savings FROM users WHERE id = %s", (user_id,))
+                cur.execute("SELECT classifications_count, waste_processed_tons, co2_saved_tons, cost_savings FROM users WHERE id = %s", (user_id,))
                 row = cur.fetchone()
                 if row:
                     data['user']['classifications'] = row['classifications_count'] or 0
-                    data['user']['listings'] = row['listings_count'] or 0
                     data['user']['waste_processed'] = float(row['waste_processed_tons'] or 0)
                     data['user']['co2_saved'] = float(row['co2_saved_tons'] or 0)
                     data['user']['cost_savings'] = float(row['cost_savings'] or 0)
+                cur.execute("SELECT COUNT(*) AS cnt FROM deals WHERE (proposer_id = %s OR responder_id = %s) AND status = 'completed'", (user_id, user_id))
+                data['user']['deals_completed'] = cur.fetchone()['cnt']
             data['nosql_sources'].append('postgresql')
     except Exception as e:
         logger.warning(f"Analytics - PostgreSQL error: {e}")
@@ -1141,6 +1781,20 @@ def analytics_dashboard():
 
             # User's classification history from MongoDB
             if user_id:
+                # Use MongoDB as source of truth for user classification count
+                mongo_count = mongo_mgr.db.classification_history.count_documents({'user_id': user_id})
+                if mongo_count > (data['user'].get('classifications') or 0):
+                    data['user']['classifications'] = mongo_count
+                    # Sync PostgreSQL to match MongoDB reality
+                    try:
+                        pg = db_manager.get_manager('postgresql')
+                        if pg:
+                            cur = pg.connection.cursor()
+                            cur.execute("UPDATE users SET classifications_count = %s WHERE id = %s", (mongo_count, user_id))
+                            pg.connection.commit()
+                    except Exception:
+                        pass
+
                 history = list(mongo_mgr.db.classification_history.find(
                     {'user_id': user_id},
                     {'_id': 0, 'image_hash': 0}
