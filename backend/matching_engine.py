@@ -221,10 +221,11 @@ def optimise_assignments(score_matrix: np.ndarray) -> List[tuple]:
 # ────────────────────────────────────────────────────────────────────
 
 # Weights for the final blended score
-W_RULE = 0.35
-W_SIMILARITY = 0.30
-W_KNN = 0.15
-W_DISTANCE = 0.20
+# Rule-based compatibility is a HARD GATE (Stage 1) — not blended.
+# Only these three decide the ranking among compatible candidates:
+W_SIMILARITY = 0.35
+W_KNN = 0.20
+W_DISTANCE = 0.45
 
 _vectoriser = ProfileVectoriser()
 
@@ -240,6 +241,19 @@ def find_matches(
 ) -> List[Dict[str, Any]]:
     """
     End-to-end matching pipeline.
+
+    PIPELINE STAGES
+    ===============
+    Stage 0  – Exclude self
+    Stage 1  – RULE-BASED HARD FILTER: Only companies whose industry has
+               non-zero compatibility with the waste type proceed.
+               This is the gatekeeper — if waste→raw material doesn't match,
+               nothing else matters.
+    Stage 2  – ML Cosine Similarity scoring on remaining candidates
+    Stage 3  – KNN proximity ranking in feature space
+    Stage 4  – Geographic distance scoring (Haversine)
+    Stage 5  – Weighted blend of all scores → final ranking
+    Stage 6  – LP optimisation hint (tie-breaking via Hungarian assignment)
 
     Parameters
     ----------
@@ -258,31 +272,50 @@ def find_matches(
     if not companies:
         return []
 
-    # Filter out the producer themselves
+    # ── Stage 0: Exclude the producer themselves ───────────────────
     candidates = [c for c in companies if c.get('id') != exclude_user_id]
     if not candidates:
         return []
 
-    # ── Step 1: Rule-based scores ──────────────────────────────────
-    rule_scores = np.array([
-        rule_score(waste_type, c.get('industry_type', ''))
-        for c in candidates
-    ])
+    # ── Stage 1: RULE-BASED HARD FILTER ────────────────────────────
+    # This is the gatekeeper. If a company's industry has NO entry in the
+    # COMPATIBILITY table for this waste type, they are eliminated.
+    # Only industries that can actually USE this waste as raw material pass.
+    compatible_industries = set(COMPATIBILITY.get(waste_type.lower(), {}).keys())
 
-    # ── Step 2: ML cosine similarity ──────────────────────────────
+    filtered = []
+    rule_scores_list = []
+    for c in candidates:
+        industry = c.get('industry_type', '')
+        rs = rule_score(waste_type, industry)
+        if industry in compatible_industries:
+            filtered.append(c)
+            rule_scores_list.append(rs)
+
+    # If nobody matched the compatibility table, return empty
+    # (no point showing companies that can't use this waste)
+    if not filtered:
+        logger.info(f"No compatible industries found for waste type '{waste_type}'")
+        return []
+
+    candidates = filtered
+    rule_scores = np.array(rule_scores_list)
+    logger.info(f"Stage 1 filter: {len(candidates)} companies compatible with '{waste_type}' (from {len(companies) - 1} total)")
+
+    # ── Stage 2: ML Cosine Similarity ──────────────────────────────
     prod_vec = _vectoriser.vectorise_producer(waste_type, producer_lat, producer_lng, quantity)
     cons_vecs = np.array([_vectoriser.vectorise_consumer(c) for c in candidates])
 
     sim_scores = _vectoriser.compute_similarity(prod_vec, cons_vecs)
 
-    # ── Step 3: KNN ranking (turned into a 0-1 score) ─────────────
+    # ── Stage 3: KNN ranking (turned into a 0-1 score) ────────────
     k = min(top_k, len(candidates))
     knn_indices = knn_rank(prod_vec, cons_vecs, k=k)
     knn_scores = np.zeros(len(candidates))
     for rank, idx in enumerate(knn_indices):
         knn_scores[idx] = 1.0 - rank / k  # best neighbour = 1.0
 
-    # ── Step 4: Distance penalty (normalised) ──────────────────────
+    # ── Stage 4: Distance scoring (Haversine, normalised) ──────────
     distances = np.array([
         haversine_km(producer_lat, producer_lng,
                      c.get('latitude') or 0, c.get('longitude') or 0)
@@ -292,15 +325,29 @@ def find_matches(
     # Invert: closer → higher score
     distance_scores = 1.0 - (distances / max_dist)
 
-    # ── Step 5: Blend into final score ─────────────────────────────
+    # ── Stage 5: Weighted blend → final score ──────────────────────
+    # Rule-based already served as the hard gate in Stage 1.
+    # Ranking is purely: how similar + how close + KNN neighbourhood.
     final_scores = (
-        W_RULE * rule_scores +
         W_SIMILARITY * sim_scores +
         W_KNN * knn_scores +
         W_DISTANCE * distance_scores
     )
 
-    # ── Step 6: Build result list, sort, return top_k ──────────────
+    # ── Stage 6: LP tie-breaking (if enough candidates) ────────────
+    # Use Hungarian assignment to nudge ties toward globally optimal pairing
+    if len(candidates) >= 2:
+        try:
+            score_matrix = final_scores.reshape(1, -1)
+            assignments = optimise_assignments(score_matrix)
+            # Give a small bonus to the LP-optimal assignment
+            for _, ci in assignments:
+                if ci < len(final_scores):
+                    final_scores[ci] += 0.02
+        except Exception:
+            pass  # LP is optional, skip if it fails
+
+    # ── Build result list, sort, return top_k ──────────────────────
     results = []
     for i, company in enumerate(candidates):
         results.append({

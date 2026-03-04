@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import './Classify.css';
 
 const MATCHING_STEPS = [
-  { label: 'Applying rule-based compatibility filter…', icon: '📋' },
+  { label: 'Filtering by waste-to-raw-material compatibility…', icon: '🚪', isGate: true },
+  { label: 'Eliminated incompatible industries', icon: '✂️', isGate: true },
   { label: 'Computing ML cosine similarity vectors…', icon: '🧠' },
   { label: 'Running KNN cluster analysis…', icon: '🔬' },
-  { label: 'Calculating geographic proximity scores…', icon: '📍' },
-  { label: 'Optimising with linear programming…', icon: '⚙️' },
-  { label: 'Ranking and finalising matches…', icon: '🏆' },
+  { label: 'Scoring geographic proximity (Haversine)…', icon: '📍' },
+  { label: 'Blending scores & LP tie-breaking…', icon: '⚙️' },
+  { label: 'Ranking final matches…', icon: '🏆' },
 ];
 
 const Classify = () => {
@@ -31,7 +32,7 @@ const Classify = () => {
     setMatchProgress(0);
     setMatchStepIdx(0);
 
-    const totalDuration = 5000;
+    const totalDuration = 6000;
     const stepInterval = totalDuration / MATCHING_STEPS.length;
     const tickInterval = 50;
     let elapsed = 0;
@@ -290,7 +291,7 @@ const Classify = () => {
                       <div className="matching-header">
                         <span className="matching-icon">🤖</span>
                         <h3>AI Matching Engine</h3>
-                        <p>Analysing <strong>{classificationResult.wasteTypes[0].name}</strong> against registered companies</p>
+                        <p>Filtering companies that can use <strong>{classificationResult.wasteTypes[0].name}</strong> as raw material, then scoring by proximity & ML</p>
                       </div>
 
                       <div className="matching-progress-bar">
@@ -302,12 +303,13 @@ const Classify = () => {
                         {MATCHING_STEPS.map((step, i) => (
                           <div
                             key={i}
-                            className={`matching-step ${
+                            className={`matching-step ${step.isGate ? 'gate-step' : ''} ${
                               i < matchStepIdx ? 'done' : i === matchStepIdx ? 'active' : ''
                             }`}
                           >
-                            <span className="step-icon">{i < matchStepIdx ? '✅' : i === matchStepIdx ? step.icon : '⏳'}</span>
+                            <span className="step-icon">{i < matchStepIdx ? (step.isGate ? '🚫' : '✅') : i === matchStepIdx ? step.icon : '⏳'}</span>
                             <span className="step-label">{step.label}</span>
+                            {step.isGate && i <= matchStepIdx && <span className="gate-badge">HARD GATE</span>}
                           </div>
                         ))}
                       </div>

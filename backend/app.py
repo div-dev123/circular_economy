@@ -246,9 +246,21 @@ def classify_waste():
         # Process image with correct preprocessing
         image_bytes = file.read()
         user_id = request.form.get('user_id')  # Optional: logged-in user
+        image_hash = hashlib.sha256(image_bytes).hexdigest()
+
+        # ── REDIS: Rate limiting FIRST (max 30 classifications per minute per IP) ──
+        # Applies to every request — cached or not — so users can't bypass via cache hits
+        if DATABASE_AVAILABLE:
+            try:
+                redis_mgr = db_manager.get_manager('redis')
+                if redis_mgr:
+                    rate_key = f"ratelimit:classify:{request.remote_addr}"
+                    if not redis_mgr.check_rate_limit(rate_key, limit=30, window=60):
+                        return jsonify({'error': 'Rate limit exceeded. Please wait a moment.'}), 429
+            except Exception:
+                pass
 
         # ── REDIS: Check cache by image hash ──
-        image_hash = hashlib.sha256(image_bytes).hexdigest()
         cache_hit = False
         if DATABASE_AVAILABLE:
             try:
@@ -269,17 +281,6 @@ def classify_waste():
 
         input_tensor = preprocess_image(image_bytes)
         print(f"📊 Input tensor shape: {input_tensor.shape}")
-        
-        # ── REDIS: Rate limiting (max 30 classifications per minute per IP) ──
-        if DATABASE_AVAILABLE:
-            try:
-                redis_mgr = db_manager.get_manager('redis')
-                if redis_mgr:
-                    rate_key = f"ratelimit:classify:{request.remote_addr}"
-                    if not redis_mgr.check_rate_limit(rate_key, limit=30, window=60):
-                        return jsonify({'error': 'Rate limit exceeded. Please wait a moment.'}), 429
-            except Exception:
-                pass
 
         # Make prediction with sigmoid (multi-label)
         with torch.no_grad():
@@ -735,10 +736,10 @@ def smart_match():
             'total': len(matches),
             'algorithm': 'hybrid_ml',
             'weights': {
-                'rule_based': 35,
-                'ml_similarity': 30,
-                'knn_clustering': 15,
-                'distance': 20,
+                'rule_based': 'hard_gate',
+                'ml_similarity': 35,
+                'knn_clustering': 20,
+                'distance': 45,
             },
         })
     except Exception as e:

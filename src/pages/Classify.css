@@ -378,6 +378,33 @@
   font-weight: 600;
 }
 
+/* Gate steps */
+.matching-step.gate-step {
+  border-left: 3px solid #dc2626;
+}
+.matching-step.gate-step.active {
+  background: #fef2f2;
+  border-left-color: #dc2626;
+}
+.matching-step.gate-step.done {
+  background: #fef2f2;
+  border-left-color: #16a34a;
+}
+.gate-badge {
+  margin-left: auto;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #dc2626;
+  color: #fff;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+.matching-step.done .gate-badge {
+  background: #16a34a;
+}
+
 .technology-section {
   padding: 4rem 0;
   background: #f8f9fa;

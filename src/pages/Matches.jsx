@@ -72,8 +72,8 @@ const Matches = () => {
         <div className="container">
           <h1>AI Material Matching</h1>
           <p className="subtitle">
-            Our hybrid ML + rule-based engine finds the best companies to process your waste — scored by
-            compatibility, proximity, and demand.
+            First, incompatible industries are eliminated. Then our ML engine scores the remaining companies
+            by similarity, proximity, and demand.
           </p>
         </div>
       </section>
@@ -82,13 +82,27 @@ const Matches = () => {
         <div className="container">
           {/* Algorithm explainer */}
           {weights && (
-            <div className="algo-bar">
-              <span className="algo-tag">🧠 Hybrid Algorithm</span>
-              <div className="algo-weights">
-                <span className="weight-pill rule">Rule-Based {weights.rule_based}%</span>
-                <span className="weight-pill ml">ML Similarity {weights.ml_similarity}%</span>
-                <span className="weight-pill knn">KNN Clustering {weights.knn_clustering}%</span>
-                <span className="weight-pill dist">Distance {weights.distance}%</span>
+            <div className="algo-pipeline">
+              <div className="pipeline-stage gate-stage">
+                <span className="stage-icon">🚪</span>
+                <div className="stage-info">
+                  <span className="stage-title">Hard Gate</span>
+                  <span className="stage-desc">Rule-based compatibility filter — incompatible industries eliminated</span>
+                </div>
+                <span className="stage-badge gate">PASS / REJECT</span>
+              </div>
+              <div className="pipeline-arrow">→</div>
+              <div className="pipeline-stage score-stage">
+                <span className="stage-icon">🧠</span>
+                <div className="stage-info">
+                  <span className="stage-title">ML Scoring</span>
+                  <span className="stage-desc">Ranked by weighted blend of 3 factors:</span>
+                </div>
+                <div className="stage-weights">
+                  <span className="weight-pill ml">Similarity {weights.ml_similarity}%</span>
+                  <span className="weight-pill knn">KNN {weights.knn_clustering}%</span>
+                  <span className="weight-pill dist">Distance {weights.distance}%</span>
+                </div>
               </div>
             </div>
           )}
@@ -176,12 +190,16 @@ const Matches = () => {
                   {/* Score breakdown (visible when expanded) */}
                   {expandedId === m.id && (
                     <div className="score-breakdown">
-                      <h4>Score Breakdown</h4>
+                      <div className="gate-passed-badge">
+                        <span className="gate-check">✅</span>
+                        <span>Passed compatibility gate — <strong>{m.industry_type}</strong> can process this waste</span>
+                        <span className="gate-affinity">Affinity: {m.rule_score}%</span>
+                      </div>
+                      <h4>Scoring Breakdown <span className="breakdown-subtitle">(among compatible companies)</span></h4>
                       <div className="breakdown-bars">
-                        <ScoreBar label="Rule-Based" value={m.rule_score} icon="📏" />
-                        <ScoreBar label="ML Similarity" value={m.similarity_score} icon="🧠" />
-                        <ScoreBar label="KNN Cluster" value={m.knn_score} icon="🎯" />
-                        <ScoreBar label="Proximity" value={m.distance_score} icon="📍" />
+                        <ScoreBar label="ML Similarity" value={m.similarity_score} icon="🧠" weight="35%" />
+                        <ScoreBar label="KNN Cluster" value={m.knn_score} icon="🎯" weight="20%" />
+                        <ScoreBar label="Proximity" value={m.distance_score} icon="📍" weight="45%" />
                       </div>
                       <div className="breakdown-meta">
                         <span>🛣️ {m.distance_km} km away</span>
@@ -214,10 +232,11 @@ const Matches = () => {
 };
 
 /* ───── tiny sub-component ───── */
-const ScoreBar = ({ label, value, icon }) => (
+const ScoreBar = ({ label, value, icon, weight }) => (
   <div className="bar-row">
     <span className="bar-label">
       {icon} {label}
+      {weight && <span className="bar-weight">({weight})</span>}
     </span>
     <div className="bar-track">
       <div

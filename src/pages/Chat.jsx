@@ -277,6 +277,7 @@ const Chat = () => {
               >
                 <div className="convo-avatar">
                   {(c.partner_name || '?')[0].toUpperCase()}
+                  {c.partner_online && <span className="online-dot" title="Online now"></span>}
                 </div>
                 <div className="convo-meta">
                   <span className="convo-name">{c.partner_name}</span>
@@ -311,10 +312,11 @@ const Chat = () => {
               <button className="mobile-menu-btn" onClick={() => setSidebarOpen(true)}>☰</button>
               <div className="chat-partner-avatar">
                 {(activeConv?.partner_name || '?')[0].toUpperCase()}
+                {activeConv?.partner_online && <span className="online-dot" title="Online now"></span>}
               </div>
               <div className="chat-partner-info">
                 <h3>{activeConv?.partner_name}</h3>
-                <span>{activeConv?.partner_industry}</span>
+                <span>{activeConv?.partner_industry}{activeConv?.partner_online ? ' • 🟢 Online' : ''}</span>
               </div>
               {activeConv?.waste_context && (
                 <span className="waste-tag">🏷️ {activeConv.waste_context}</span>
