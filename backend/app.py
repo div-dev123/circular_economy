@@ -1043,6 +1043,7 @@ def send_message(conv_id):
             pass
 
         # ── Notification for the recipient ──
+        recipient_id = None
         try:
             cur = pg.connection.cursor()
             cur.execute("SELECT user1_id, user2_id FROM conversations WHERE id = %s", (conv_id,))
@@ -1060,7 +1061,25 @@ def send_message(conv_id):
                     related_id=conv_id,
                     sender_id=sender_id,
                 )
-        except Exception:
+        except Exception as e:
+            logger.error(f"Notification error: {e}")
+            pass
+
+        # ── NEO4J: Update pulse ──
+        try:
+            neo_mgr = db_manager.get_manager('neo4j')
+            if neo_mgr and sender_id and recipient_id:
+                with neo_mgr.driver.session() as sess:
+                    sess.run(
+                        "MERGE (a:Company {id: $uid}) "
+                        "MERGE (b:Company {id: $oid}) "
+                        "MERGE (a)-[r:CHATTED_WITH]-(b) "
+                        "ON CREATE SET r.chat_count = 1, r.created_at = timestamp() "
+                        "ON MATCH SET r.chat_count = COALESCE(r.chat_count, 0) + 1",
+                        uid=sender_id, oid=recipient_id
+                    )
+        except Exception as e:
+            logger.error(f"Neo4j chat update failed: {e}")
             pass
 
         return jsonify({'message': msg}), 201
@@ -1953,7 +1972,7 @@ def classification_history():
 
 @app.route('/api/network/graph', methods=['GET'])
 def network_graph():
-    """Get company relationship graph from Neo4j."""
+    """Get company relationship graph from Neo4j in a structured nodes/links format."""
     if not DATABASE_AVAILABLE:
         return jsonify({'error': 'Database not available'}), 501
 
@@ -1966,66 +1985,100 @@ def network_graph():
 
         pg = db_manager.get_manager('postgresql')
 
+        nodes = []
+        links = []
+        node_ids = set()
+
         with neo4j_mgr.driver.session() as sess:
             if user_id:
-                # Get this company's network
+                # Get this company's network (Incoming & Outgoing)
                 result = sess.run(
-                    "MATCH (c:Company {id: $uid})-[r]->(other:Company) "
-                    "RETURN other.id AS partner_id, type(r) AS relationship, "
-                    "r.waste_type AS waste_type, r.score AS score, "
-                    "r.chat_count AS chat_count",
+                    "MATCH (c:Company {id: $uid})-[r]-(other:Company) "
+                    "RETURN startNode(r).id AS source_id, endNode(r).id AS target_id, "
+                    "type(r) AS relationship, r.waste_type AS waste_type, r.score AS score",
                     uid=user_id,
                 )
             else:
                 # Get full network
                 result = sess.run(
                     "MATCH (a:Company)-[r]->(b:Company) "
-                    "RETURN a.id AS from_id, b.id AS to_id, type(r) AS relationship, "
+                    "RETURN a.id AS source_id, b.id AS target_id, type(r) AS relationship, "
                     "r.waste_type AS waste_type, r.score AS score "
-                    "LIMIT 200"
+                    "LIMIT 300"
                 )
 
-            edges = [record.data() for record in result]
+            records = [record.data() for record in result]
 
-            # Enrich with company names from PostgreSQL
-            if pg and edges:
-                company_ids = set()
-                for e in edges:
-                    company_ids.add(e.get('partner_id') or e.get('from_id'))
-                    if e.get('to_id'):
-                        company_ids.add(e['to_id'])
-                company_ids.discard(None)
+            # Build links and track unique nodes
+            if user_id:
+                node_ids.add(user_id)
+                
+            for rec in records:
+                links.append({
+                    'source': rec['source_id'],
+                    'target': rec['target_id'],
+                    'relationship': rec['relationship'],
+                    'waste_type': rec['waste_type'],
+                    'value': rec.get('score', 1.0)
+                })
+                node_ids.add(rec['source_id'])
+                node_ids.add(rec['target_id'])
 
-                names = {}
-                for cid in company_ids:
+            # Fetch node metadata from PostgreSQL and enrichment from Neo4j
+            if pg and node_ids:
+                for cid in node_ids:
                     try:
                         u = pg.get_user_by_id(cid)
+                        
+                        # Get connection counts from Neo4j for this node
+                        with neo4j_mgr.driver.session() as s2:
+                            counts = s2.run(
+                                "MATCH (c:Company {id: $uid})-[r]->() "
+                                "RETURN type(r) AS type, count(r) AS count",
+                                uid=cid
+                            ).data()
+                            
+                            deal_count = sum(c['count'] for c in counts if c['type'] == 'DEALT_WITH')
+                            chat_count = sum(c['count'] for c in counts if c['type'] == 'CHATTED_WITH')
+
                         if u:
-                            names[cid] = u.get('company_name', f'Company {cid}')
+                            nodes.append({
+                                'id': cid,
+                                'name': u.get('company_name', f'Company {cid}'),
+                                'type': 'Company',
+                                'industry': u.get('industry_type', 'Unknown'),
+                                'location': u.get('location', 'Unknown'),
+                                'classifications': u.get('classifications_count', 0),
+                                'deal_count': deal_count,
+                                'chat_count': chat_count
+                            })
+                        else:
+                            nodes.append({
+                                'id': cid, 
+                                'name': f'Company {cid}', 
+                                'type': 'Company',
+                                'deal_count': deal_count,
+                                'chat_count': chat_count
+                            })
                     except Exception:
-                        pass
+                        nodes.append({'id': cid, 'name': f'Company {cid}', 'type': 'Company'})
+            else:
+                # Fallback if PG not available
+                for cid in node_ids:
+                    nodes.append({'id': cid, 'name': f'Company {cid}', 'type': 'Company'})
 
-                for e in edges:
-                    pid = e.get('partner_id') or e.get('to_id')
-                    e['partner_name'] = names.get(pid, f'Company {pid}')
-                    if e.get('from_id'):
-                        e['from_name'] = names.get(e['from_id'], f'Company {e["from_id"]}')
-
-            # Graph stats
-            stats_r = sess.run(
-                "MATCH (n:Company) RETURN count(n) AS companies"
-            ).single()
-            rels_r = sess.run(
-                "MATCH ()-[r]->() RETURN count(r) AS relationships"
-            ).single()
+            # Graph stats for real-time monitoring
+            stats_r = sess.run("MATCH (n:Company) RETURN count(n) AS companies").single()
+            rels_r = sess.run("MATCH ()-[r]->() RETURN count(r) AS relationships").single()
 
         return jsonify({
-            'edges': edges,
-            'total_edges': len(edges),
-            'graph_stats': {
+            'nodes': nodes,
+            'links': links,
+            'stats': {
                 'companies': stats_r['companies'] if stats_r else 0,
                 'relationships': rels_r['relationships'] if rels_r else 0,
-            },
+                'total_links': len(links)
+            }
         })
     except Exception as e:
         logger.error(f"Network graph error: {e}")

@@ -11,6 +11,7 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
+import NetworkGraph from './pages/NetworkGraph';
 import Matches from './pages/Matches';
 import Chat from './pages/Chat';
 import DealHistory from './pages/DealHistory';
@@ -83,6 +84,7 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route path="/network" element={<NetworkGraph />} />
           <Route
             path="/matches"
             element={

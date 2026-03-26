@@ -42,6 +42,8 @@ backend/model.pth
 backend/.env
 backend/.env.example
 backend/app.py.bak
+backend/change_neo4j_password.py
+backend/setup_neo4j_password.py
 
 # OS files
 Thumbs.db

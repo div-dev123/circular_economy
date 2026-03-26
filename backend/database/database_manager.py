@@ -385,7 +385,7 @@ class DatabaseManager:
             user = postgres_manager.get_user_by_id(user_id)
             
             # Optionally create corresponding entries in other databases
-            # For example, create user profile in MongoDB
+            # Create user profile in MongoDB
             mongo_manager = self.managers.get('mongodb')
             if mongo_manager:
                 mongo_manager.create_user_profile({
@@ -396,6 +396,19 @@ class DatabaseManager:
                     'location': user_data.get('location', ''),
                     'created_at': datetime.utcnow()
                 })
+            
+            # Create company node in Neo4j
+            neo4j_manager = self.managers.get('neo4j')
+            if neo4j_manager:
+                try:
+                    neo4j_manager.create_industry_node(
+                        industry_id=str(user_id),
+                        industry_type=user_data.get('industry_type', 'Manufacturing'),
+                        location=user_data.get('location', 'India'),
+                        capacity=100.0 # Default starting capacity
+                    )
+                except Exception as ne:
+                    logger.warning(f"Failed to create Neo4j node for user {user_id}: {ne}")
             
             # Log the registration in Cassandra
             cassandra_manager = self.managers.get('cassandra')

@@ -156,6 +156,7 @@ const Header = () => {
     { to: '/how-it-works', label: 'How It Works' },
     { to: '/marketplace', label: 'Marketplace' },
     { to: '/matches', label: 'Matches' },
+    { to: '/network', label: 'Network' },
     { to: '/chat', label: 'Chat' },
     ...(isLoggedIn ? [{ to: '/deals', label: 'Deals' }] : []),
     { to: '/classify', label: 'Classification' },
