@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
 import logging
 from datetime import datetime
 from .config import DATABASE_CONFIG
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self):
-        self.managers = {}
+        self.managers: Dict[str, Any] = {}
         self._initialize_connections()
     
     def _initialize_connections(self):
@@ -140,12 +140,12 @@ class DatabaseManager:
                 )
             
             # Redis: Update real-time metrics
-            redis_manager = self.managers.get('redis')
+            redis_manager: Optional[RedisManager] = self.managers.get('redis')
             if redis_manager:
                 redis_manager.increment_waste_views(str(transaction_data.get('waste_id', '')))
             
             # Neo4j: Update supply chain relationships
-            neo4j_manager = self.managers.get('neo4j')
+            neo4j_manager: Optional[Neo4jManager] = self.managers.get('neo4j')
             if neo4j_manager and 'waste_id' in transaction_data and 'industry_id' in transaction_data:
                 neo4j_manager.create_supply_chain_relationship(
                     waste_id=str(transaction_data['waste_id']),
@@ -177,7 +177,7 @@ class DatabaseManager:
                     return cached_results
             
             # MongoDB: Perform actual search
-            mongo_manager = self.managers.get('mongodb')
+            mongo_manager: Optional[MongoDBManager] = self.managers.get('mongodb')
             if mongo_manager:
                 results = mongo_manager.search_waste_listings(query, location)
             else:
@@ -186,7 +186,7 @@ class DatabaseManager:
             
             # PostgreSQL: Get user preferences for personalized results
             if user_id:
-                postgres_manager = self.managers.get('postgresql')
+                postgres_manager: Optional[PostgreSQLManager] = self.managers.get('postgresql')
                 if postgres_manager:
                     user_companies = postgres_manager.get_user_companies(int(user_id))
                     # Apply personalization logic here
@@ -226,23 +226,23 @@ class DatabaseManager:
             trends = []
             
             # Neo4j: Get industry connections and pathways
-            neo4j_manager = self.managers.get('neo4j')
+            neo4j_manager: Optional[Neo4jManager] = self.managers.get('neo4j')
             if neo4j_manager:
                 industries = neo4j_manager.find_industries_for_waste(waste_type)
                 pathways = neo4j_manager.get_circular_economy_pathways(waste_type)
             
             # PostgreSQL: Get industry statistics
-            postgres_manager = self.managers.get('postgresql')
+            postgres_manager: Optional[PostgreSQLManager] = self.managers.get('postgresql')
             if postgres_manager:
                 industry_stats = postgres_manager.get_industry_statistics()
             
             # Cassandra: Get historical trends
-            cassandra_manager = self.managers.get('cassandra')
+            cassandra_manager: Optional[CassandraManager] = self.managers.get('cassandra')
             if cassandra_manager:
                 trends = cassandra_manager.get_waste_diversion_trends(days=90)
             
             # Redis: Get real-time metrics
-            redis_manager = self.managers.get('redis')
+            redis_manager: Optional[RedisManager] = self.managers.get('redis')
             # Get recent interactions, views, etc.
             
             insights = {
@@ -273,24 +273,24 @@ class DatabaseManager:
             user_stats = {}
             
             # Cassandra: Get environmental metrics
-            cassandra_manager = self.managers.get('cassandra')
+            cassandra_manager: Optional[CassandraManager] = self.managers.get('cassandra')
             if cassandra_manager:
                 co2_savings = cassandra_manager.get_co2_savings_by_month(2026, 2)
                 trends = cassandra_manager.get_waste_diversion_trends(days=365)
             
             # PostgreSQL: Get compliance data
-            postgres_manager = self.managers.get('postgresql')
+            postgres_manager: Optional[PostgreSQLManager] = self.managers.get('postgresql')
             if postgres_manager:
                 compliance_report = postgres_manager.get_compliance_report()
             
             # MongoDB: Get user-specific statistics
             if user_id:
-                mongo_manager = self.managers.get('mongodb')
+                mongo_manager: Optional[MongoDBManager] = self.managers.get('mongodb')
                 if mongo_manager:
                     user_stats = mongo_manager.get_waste_statistics(user_id)
             
             # Redis: Get real-time engagement metrics
-            redis_manager = self.managers.get('redis')
+            redis_manager: Optional[RedisManager] = self.managers.get('redis')
             # Get views, interactions, etc.
             
             report = {
@@ -316,7 +316,7 @@ class DatabaseManager:
         """AI waste classification with caching"""
         try:
             # Check Redis cache first
-            redis_manager = self.managers.get('redis')
+            redis_manager: Optional[RedisManager] = self.managers.get('redis')
             if redis_manager:
                 cached_result = redis_manager.get_cached_classification(image_hash)
                 
@@ -341,7 +341,7 @@ class DatabaseManager:
             
             # Store in MongoDB for user history
             if user_id:
-                mongo_manager = self.managers.get('mongodb')
+                mongo_manager: Optional[MongoDBManager] = self.managers.get('mongodb')
                 if mongo_manager:
                     mongo_manager.store_waste_image(
                         image_bytes, 
@@ -350,7 +350,7 @@ class DatabaseManager:
                     )
             
             # Record analytics in Cassandra
-            cassandra_manager = self.managers.get('cassandra')
+            cassandra_manager: Optional[CassandraManager] = self.managers.get('cassandra')
             if cassandra_manager:
                 cassandra_manager.record_analytics_metric(
                     metric_name='ai_classifications',
@@ -369,7 +369,7 @@ class DatabaseManager:
     def register_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """Register a new user with password"""
         try:
-            postgres_manager = self.managers.get('postgresql')
+            postgres_manager: Optional[PostgreSQLManager] = self.managers.get('postgresql')
             if not postgres_manager:
                 return {'error': 'Database not available'}
             
@@ -386,7 +386,7 @@ class DatabaseManager:
             
             # Optionally create corresponding entries in other databases
             # Create user profile in MongoDB
-            mongo_manager = self.managers.get('mongodb')
+            mongo_manager: Optional[MongoDBManager] = self.managers.get('mongodb')
             if mongo_manager:
                 mongo_manager.create_user_profile({
                     'user_id': user_id,
@@ -398,7 +398,7 @@ class DatabaseManager:
                 })
             
             # Create company node in Neo4j
-            neo4j_manager = self.managers.get('neo4j')
+            neo4j_manager: Optional[Neo4jManager] = self.managers.get('neo4j')
             if neo4j_manager:
                 try:
                     neo4j_manager.create_industry_node(
@@ -411,7 +411,7 @@ class DatabaseManager:
                     logger.warning(f"Failed to create Neo4j node for user {user_id}: {ne}")
             
             # Log the registration in Cassandra
-            cassandra_manager = self.managers.get('cassandra')
+            cassandra_manager: Optional[CassandraManager] = self.managers.get('cassandra')
             if cassandra_manager:
                 cassandra_manager.record_analytics_metric(
                     metric_name='user_registrations',
@@ -429,7 +429,7 @@ class DatabaseManager:
     def authenticate_user(self, email: str, password: str) -> Dict[str, Any]:
         """Authenticate user with email and password"""
         try:
-            postgres_manager = self.managers.get('postgresql')
+            postgres_manager: Optional[PostgreSQLManager] = self.managers.get('postgresql')
             if not postgres_manager:
                 return {'error': 'Database not available'}
             
@@ -437,7 +437,7 @@ class DatabaseManager:
             
             if user:
                 # Update last login in MongoDB if available
-                mongo_manager = self.managers.get('mongodb')
+                mongo_manager: Optional[MongoDBManager] = self.managers.get('mongodb')
                 if mongo_manager:
                     try:
                         mongo_manager.update_user(str(user['id']), {
@@ -447,7 +447,7 @@ class DatabaseManager:
                         pass  # Continue even if MongoDB update fails
                 
                 # Log the login in Cassandra
-                cassandra_manager = self.managers.get('cassandra')
+                cassandra_manager: Optional[CassandraManager] = self.managers.get('cassandra')
                 if cassandra_manager:
                     cassandra_manager.record_analytics_metric(
                         metric_name='user_logins',

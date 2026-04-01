@@ -137,7 +137,30 @@ const NetworkGraph = () => {
             if (link.relationship === 'DEALT_WITH') return 2;
             return 0;
           }}
-          linkLabel={(link) => `<div class="link-label">${link.relationship.replace(/_/g, ' ')} ${link.waste_type ? `(${link.waste_type})` : ''}</div>`}
+          linkLabel={(link) => {
+            const rel = link.relationship.replace(/_/g, ' ');
+            let html = `<div class="graph-tooltip">
+              <div class="tooltip-title">${rel}</div>`;
+            
+            if (link.waste_type) {
+              html += `<div class="tooltip-row"><span>Waste Type:</span> <strong>${link.waste_type}</strong></div>`;
+            }
+            if (link.value && link.value !== 1) {
+              html += `<div class="tooltip-row"><span>Match Score:</span> <strong>${link.value.toFixed(2)}</strong></div>`;
+            }
+            if (link.total_deals) {
+              html += `<div class="tooltip-row"><span>Total Deals:</span> <strong>${link.total_deals}</strong></div>`;
+            }
+            if (link.total_quantity) {
+              html += `<div class="tooltip-row"><span>Total Quantity:</span> <strong>${link.total_quantity.toLocaleString()} units</strong></div>`;
+            }
+            if (link.chat_count) {
+              html += `<div class="tooltip-row"><span>Total Chats:</span> <strong>${link.chat_count}</strong></div>`;
+            }
+            
+            html += '</div>';
+            return html;
+          }}
           linkColor={(link) => {
             if (link.relationship === 'DEALT_WITH') return 'rgba(16, 185, 129, 0.4)'; // Fainter Green
             if (link.relationship === 'CHATTED_WITH') return 'rgba(59, 130, 246, 0.4)'; // Fainter Blue
@@ -216,7 +239,12 @@ const NetworkGraph = () => {
             if (textAngle > Math.PI / 2) textAngle = -(Math.PI - textAngle);
             if (textAngle < -Math.PI / 2) textAngle = -(-Math.PI - textAngle);
 
-            const label = link.relationship.replace(/_/g, ' ');
+            let label = link.relationship.replace(/_/g, ' ');
+            if (link.relationship === 'CHATTED_WITH' && link.chat_count) label += ` (${link.chat_count})`;
+            else if (link.relationship === 'DEALT_WITH' && link.total_deals) label += ` (${link.total_deals})`;
+            else if (link.relationship === 'MATCHED_WITH' && link.value && link.value !== 1.0) label += ` [${link.value.toFixed(2)}]`;
+            
+            if (link.waste_type) label += ` · ${link.waste_type}`;
 
             ctx.save();
             ctx.translate(textPos.x, textPos.y);

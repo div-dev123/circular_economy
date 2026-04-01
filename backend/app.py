@@ -79,6 +79,21 @@ DEVICE = torch.device('cpu')  # Using CPU for now
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, 'model.pth')
 
+# Internal mapping from model class tags to database/matching keys
+CLASS_TO_INTERNAL = {
+    'METAL': 'metal',
+    'PLASTIC': 'plastic',
+    'PAPER_CARDBOARD': 'paper/cardboard',
+    'GLASS': 'glass',
+    'ORGANIC': 'organic',
+    'TEXTILE': 'textile',
+    'CONSTRUCTION': 'construction',
+    'HAZARDOUS': 'hazardous',
+    'INDUSTRIAL_ASH': 'industrial ash',
+    'ELECTRONIC': 'electronic',
+    'MIXED': 'mixed',
+}
+
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
 
@@ -261,7 +276,7 @@ def classify_waste():
                 pass
 
         # ── REDIS: Check cache by image hash ──
-        cache_hit = False
+        response_data = None
         if DATABASE_AVAILABLE:
             try:
                 redis_mgr = db_manager.get_manager('redis')
@@ -269,75 +284,97 @@ def classify_waste():
                     cached = redis_mgr.get_cached_classification(image_hash)
                     if cached:
                         print(f"⚡ REDIS cache hit for {image_hash[:12]}")
-                        cache_hit = True
-                        # Still record the event in analytics
+                        response_data = cached
+                        # Still record the hit in analytics
                         try:
                             redis_mgr.client.incr('stats:classify:cache_hits')
                         except Exception:
                             pass
-                        return jsonify(cached)
             except Exception:
                 pass  # Cache miss is fine, proceed with model
 
-        input_tensor = preprocess_image(image_bytes)
-        print(f"📊 Input tensor shape: {input_tensor.shape}")
+        if not response_data:
+            input_tensor = preprocess_image(image_bytes)
+            print(f"📊 Input tensor shape: {input_tensor.shape}")
 
-        # Make prediction with sigmoid (multi-label)
-        with torch.no_grad():
-            print("🧠 Running model inference...")
-            logits = model(input_tensor)
-            print(f"🔢 Logits shape: {logits.shape}")
-            probabilities = torch.sigmoid(logits).cpu()  # ← sigmoid for multi-label
-            confidence_scores = probabilities.squeeze().numpy()
-            print(f"📈 Confidence scores: {confidence_scores}")
-        
-        # Build results for all classes
-        all_results = []
-        for i, (cls, prob) in enumerate(zip(UNIFIED_CLASSES, confidence_scores)):
-            all_results.append({
-                'class': cls,
-                'name': CLASS_META[cls]['name'],
-                'icon': CLASS_META[cls]['icon'],
-                'confidence': float(prob),
-                'confidence_pct': round(float(prob) * 100, 1),
-            })
-        
-        # Sort by confidence descending
-        all_results.sort(key=lambda x: x['confidence'], reverse=True)
-        print(f"📋 All results: {[(r['name'], r['confidence_pct']) for r in all_results]}")
-        
-        # Get top 3 predictions
-        top_3 = all_results[:3]
-        results = [
-            {
-                "name": item["name"],
-                "icon": item["icon"],
-                "confidence": item["confidence_pct"]
+            # Make prediction with sigmoid (multi-label)
+            with torch.no_grad():
+                print("🧠 Running model inference...")
+                logits = model(input_tensor)
+                probabilities = torch.sigmoid(logits).cpu()
+                confidence_scores = probabilities.squeeze().numpy()
+            
+            # Build results for all classes
+            all_results = []
+            for i, (cls, prob) in enumerate(zip(UNIFIED_CLASSES, confidence_scores)):
+                all_results.append({
+                    'class': cls,
+                    'name': CLASS_META[cls]['name'],
+                    'icon': CLASS_META[cls]['icon'],
+                    'confidence': float(prob),
+                    'confidence_pct': round(float(prob) * 100, 1),
+                })
+            
+            # Sort by confidence descending
+            all_results.sort(key=lambda x: x['confidence'], reverse=True)
+            top_3 = all_results[:3]
+            results = [
+                {"name": item["name"], "icon": item["icon"], "confidence": item["confidence_pct"]}
+                for item in top_3
+            ]
+            
+            # Generate potential uses based on top prediction
+            primary_class = top_3[0]["class"]
+            primary_type = CLASS_TO_INTERNAL.get(primary_class, 'mixed')
+            
+            response_data = {
+                "wasteTypes": results,
+                "potentialUses": get_potential_uses(primary_type),
+                "estimatedValue": get_estimated_value(primary_type),
+                "environmentalImpact": get_environmental_impact(primary_type),
+                # Metadata for matching engine to avoid re-calculating from results strings
+                "_internal_class": primary_class 
             }
-            for item in top_3
-        ]
+
+            # Cache the newly generated result
+            if DATABASE_AVAILABLE:
+                try:
+                    redis_mgr = db_manager.get_manager('redis')
+                    if redis_mgr:
+                        redis_mgr.cache_waste_classification(image_hash, response_data, ttl=3600)
+                except Exception:
+                    pass
+
+        # ── ALWAYS Proceed to Graph and Analytics (Cached or Not) ──
+        # Extract all necessary variables from response_data for downstream logic
+        p_class = None
+        if isinstance(response_data, dict):
+            p_class = response_data.get('_internal_class')
+            
+        if not p_class and isinstance(response_data, dict):
+            w_types = response_data.get('wasteTypes')
+            if isinstance(w_types, list) and len(w_types) > 0:
+                first_name = w_types[0].get('name', '').upper().replace(' ', '_').replace('/', '_')
+                p_class = first_name if first_name in UNIFIED_CLASSES else UNIFIED_CLASSES[0]
         
-        # Generate potential uses based on top prediction
-        primary_type = top_3[0]["name"].lower()
-        potential_uses = get_potential_uses(primary_type.replace("/", "_"))
-        estimated_value = get_estimated_value(primary_type.replace("/", "_"))
-        environmental_impact = get_environmental_impact(primary_type.replace("/", "_"))
+        if not p_class:
+            p_class = UNIFIED_CLASSES[0]
+            
+        p_type = CLASS_TO_INTERNAL.get(p_class, 'mixed')
         
-        # Build response
-        response_data = {
-            "wasteTypes": results,
-            "potentialUses": potential_uses,
-            "estimatedValue": estimated_value,
-            "environmentalImpact": environmental_impact
-        }
+        # Standalone variables for legacy code and NoSQL updates
+        results = response_data.get('wasteTypes', [])
+        top_3 = results # Alias for legacy code
+        primary_type = p_type # Alias for legacy code
+        est_val = response_data.get('estimatedValue')
+        env_impact = response_data.get('environmentalImpact')
 
         # ── NoSQL analytics recording (non-blocking) ──
         if DATABASE_AVAILABLE:
             try:
-                # REDIS: Cache the result + increment counters
+                # REDIS: Increment counters
                 redis_mgr = db_manager.get_manager('redis')
                 if redis_mgr:
-                    redis_mgr.cache_waste_classification(image_hash, response_data, ttl=3600)
                     redis_mgr.client.incr(f'stats:classifications:{primary_type}')
                     redis_mgr.client.incr('stats:classifications:total')
                     print(f"💾 REDIS: Cached classification {image_hash[:12]}")
@@ -364,11 +401,10 @@ def classify_waste():
                         'image_hash': image_hash,
                         'user_id': int(user_id) if user_id else None,
                         'filename': file.filename,
-                        'primary_type': primary_type,
+                        'primary_type': p_type,
                         'top_3': results,
-                        'all_scores': {r['name']: r['confidence_pct'] for r in all_results},
-                        'estimated_value': estimated_value,
-                        'environmental_impact': environmental_impact,
+                        'estimated_value': est_val,
+                        'environmental_impact': env_impact,
                         'created_at': datetime.utcnow(),
                     }
                     mongo_mgr.db.classification_history.insert_one(doc)
@@ -380,11 +416,13 @@ def classify_waste():
                 # CASSANDRA: Record time-series event for analytics
                 cass_mgr = db_manager.get_manager('cassandra')
                 if cass_mgr:
+                    # dimension2 expects a string, try to get confidence from results
+                    conf = results[0]['confidence'] if results and len(results) > 0 else 0
                     cass_mgr.record_analytics_metric(
                         metric_name='classifications',
                         timestamp=datetime.utcnow(),
-                        dimension1=primary_type,
-                        dimension2=str(top_3[0]['confidence_pct']),
+                        dimension1=p_type,
+                        dimension2=str(conf),
                         value=1.0,
                     )
                     print(f"📊 CASSANDRA: Logged classification event")
@@ -405,9 +443,49 @@ def classify_waste():
                     print(f"🌿 NEO4J: Updated WasteType node '{primary_type}'")
             except Exception:
                 pass
+            # ── NEO4J: Trigger matching for the classified waste type ──
+            if user_id and MATCHING_ENGINE_AVAILABLE:
+                try:
+                    neo4j_mgr = db_manager.get_manager('neo4j')
+                    pg = db_manager.get_manager('postgresql')
+                    if neo4j_mgr and pg:
+                        all_companies = pg.get_all_users_for_map()
+                        # Get user coordinates
+                        u = pg.get_user_by_id(int(user_id))
+                        plat = (u.get('latitude') if u else None) or 22.5
+                        plng = (u.get('longitude') if u else None) or 78.5
+                        
+                        matches = find_matches(
+                            waste_type=p_type,
+                            producer_lat=plat,
+                            producer_lng=plng,
+                            companies=all_companies,
+                            quantity=1.0,
+                            top_k=5,
+                            exclude_user_id=int(user_id)
+                        )
+                        
+                        if matches:
+                            with neo4j_mgr.driver.session() as sess:
+                                for m in matches:
+                                    sess.run(
+                                        "MERGE (a:Company {id: $uid}) "
+                                        "MERGE (b:Company {id: $mid}) "
+                                        "MERGE (a)-[r:MATCHED_WITH]->(b) "
+                                        "ON CREATE SET r.waste_type = $wt, r.score = $score, r.created_at = timestamp() "
+                                        "ON MATCH SET r.score = $score, r.updated_at = timestamp(), r.match_count = coalesce(r.match_count, 0) + 1",
+                                        uid=int(user_id), mid=m.get('id'), wt=p_type,
+                                        score=m.get('match_score', 0)
+                                    )
+                            print(f"🌿 NEO4J: Recorded {len(matches)} MATCHED_WITH edges for user {user_id}")
+                except Exception as e:
+                    print(f"⚠️ NEO4J matching update failed: {e}")
+        
+        # Prepare clean response (remove internal keys)
+        final_response = {k: v for k, v in response_data.items() if not k.startswith('_')}
         
         print("✅ Classification successful")
-        return jsonify(response_data)
+        return jsonify(final_response)
         
     except Exception as e:
         print(f"❌ CLASSIFICATION ERROR: {str(e)}")
@@ -1995,7 +2073,9 @@ def network_graph():
                 result = sess.run(
                     "MATCH (c:Company {id: $uid})-[r]-(other:Company) "
                     "RETURN startNode(r).id AS source_id, endNode(r).id AS target_id, "
-                    "type(r) AS relationship, r.waste_type AS waste_type, r.score AS score",
+                    "type(r) AS relationship, r.waste_type AS waste_type, r.score AS score, "
+                    "r.total_deals AS total_deals, r.total_quantity AS total_quantity, "
+                    "r.chat_count AS chat_count",
                     uid=user_id,
                 )
             else:
@@ -2003,7 +2083,9 @@ def network_graph():
                 result = sess.run(
                     "MATCH (a:Company)-[r]->(b:Company) "
                     "RETURN a.id AS source_id, b.id AS target_id, type(r) AS relationship, "
-                    "r.waste_type AS waste_type, r.score AS score "
+                    "r.waste_type AS waste_type, r.score AS score, "
+                    "r.total_deals AS total_deals, r.total_quantity AS total_quantity, "
+                    "r.chat_count AS chat_count "
                     "LIMIT 300"
                 )
 
@@ -2019,7 +2101,10 @@ def network_graph():
                     'target': rec['target_id'],
                     'relationship': rec['relationship'],
                     'waste_type': rec['waste_type'],
-                    'value': rec.get('score', 1.0)
+                    'value': rec.get('score', 1.0),
+                    'total_deals': rec.get('total_deals'),
+                    'total_quantity': rec.get('total_quantity'),
+                    'chat_count': rec.get('chat_count')
                 })
                 node_ids.add(rec['source_id'])
                 node_ids.add(rec['target_id'])
