@@ -191,9 +191,10 @@ const Chat = () => {
     prevMsgCount.current = messages.length;
   }, [messages]);
 
-  /* ── polling: refresh messages + deals every 3s ── */
+  /* ── polling: refresh messages + deals every 3s (only when active) ── */
   useEffect(() => {
     pollRef.current = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       loadMessages();
       loadConversations();
       loadDeals();

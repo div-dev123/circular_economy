@@ -493,141 +493,144 @@ def classify_waste():
         traceback.print_exc()
         return jsonify({"error": f"Classification failed: {str(e)}"}), 500
 
-def get_potential_uses(waste_type):
-    uses = {
-        "metal": [
-            "Metal reprocessing for manufacturing",
-            "Construction industry applications",
-            "Automotive parts production"
-        ],
-        "plastic": [
-            "Recycling into new plastic products",
-            "Manufacturing construction materials",
-            "Creating textile fibers"
-        ],
-        "paper/cardboard": [
-            "Paper recycling and pulp production",
-            "Packaging materials",
-            "Compostable products"
-        ],
-        "glass": [
-            "Glass recycling and remelting",
-            "Construction aggregate",
-            "Fiberglass production"
-        ],
-        "organic": [
-            "Composting for agricultural use",
-            "Biogas production",
-            "Soil amendment"
-        ],
-        "textile": [
-            "Textile recycling and fiber recovery",
-            "Insulation manufacturing",
-            "Industrial wiping materials"
-        ],
-        "construction": [
-            "Aggregate for road construction",
-            "Concrete recycling",
-            "Building material production"
-        ],
-        "hazardous": [
-            "Specialized treatment facilities",
-            "Safe disposal protocols",
-            "Hazardous waste management"
-        ],
-        "industrial ash": [
-            "Cement production additive",
-            "Road construction material",
-            "Landfill cover material"
-        ],
-        "electronic": [
-            "Component recovery and refurbishment",
-            "Precious metal extraction",
-            "Raw material recycling"
-        ],
-        "mixed": [
-            "Material separation and sorting",
-            "Component recovery",
-            "Specialized processing"
-        ]
+POTENTIAL_USES = {
+    "metal": [
+        "Metal reprocessing for manufacturing",
+        "Construction industry applications",
+        "Automotive parts production"
+    ],
+    "plastic": [
+        "Recycling into new plastic products",
+        "Manufacturing construction materials",
+        "Creating textile fibers"
+    ],
+    "paper/cardboard": [
+        "Paper recycling and pulp production",
+        "Packaging materials",
+        "Compostable products"
+    ],
+    "glass": [
+        "Glass recycling and remelting",
+        "Construction aggregate",
+        "Fiberglass production"
+    ],
+    "organic": [
+        "Composting for agricultural use",
+        "Biogas production",
+        "Soil amendment"
+    ],
+    "textile": [
+        "Textile recycling and fiber recovery",
+        "Insulation manufacturing",
+        "Industrial wiping materials"
+    ],
+    "construction": [
+        "Aggregate for road construction",
+        "Concrete recycling",
+        "Building material production"
+    ],
+    "hazardous": [
+        "Specialized treatment facilities",
+        "Safe disposal protocols",
+        "Hazardous waste management"
+    ],
+    "industrial ash": [
+        "Cement production additive",
+        "Road construction material",
+        "Landfill cover material"
+    ],
+    "electronic": [
+        "Component recovery and refurbishment",
+        "Precious metal extraction",
+        "Raw material recycling"
+    ],
+    "mixed": [
+        "Material separation and sorting",
+        "Component recovery",
+        "Specialized processing"
+    ]
+}
+
+ESTIMATED_VALUES = {
+    "metal": "₹16,000-33,000 per tonne",
+    "plastic": "₹10,000-15,000 per tonne",
+    "paper/cardboard": "₹6,500-12,500 per tonne",
+    "glass": "₹3,500-6,500 per tonne",
+    "organic": "₹4,000-8,000 per tonne",
+    "textile": "₹5,000-10,000 per tonne",
+    "construction": "₹2,500-6,000 per tonne",
+    "hazardous": "₹42,000-83,000 per tonne",
+    "industrial ash": "₹2,000-4,000 per tonne",
+    "electronic": "₹25,000-50,000 per tonne",
+    "mixed": "₹6,000-12,500 per tonne"
+}
+
+ENVIRONMENTAL_IMPACTS = {
+    "metal": {
+        "co2Saved": "1.8 tonnes CO₂",
+        "landfillDiverted": "100%",
+        "energyRecovered": "1200 kWh"
+    },
+    "plastic": {
+        "co2Saved": "1.2 tonnes CO₂",
+        "landfillDiverted": "100%",
+        "energyRecovered": "850 kWh"
+    },
+    "paper/cardboard": {
+        "co2Saved": "1.0 tonnes CO₂",
+        "landfillDiverted": "100%",
+        "energyRecovered": "600 kWh"
+    },
+    "glass": {
+        "co2Saved": "0.9 tonnes CO₂",
+        "landfillDiverted": "100%",
+        "energyRecovered": "500 kWh"
+    },
+    "organic": {
+        "co2Saved": "0.8 tonnes CO₂",
+        "landfillDiverted": "100%",
+        "energyRecovered": "400 kWh"
+    },
+    "textile": {
+        "co2Saved": "1.1 tonnes CO₂",
+        "landfillDiverted": "100%",
+        "energyRecovered": "700 kWh"
+    },
+    "construction": {
+        "co2Saved": "0.7 tonnes CO₂",
+        "landfillDiverted": "100%",
+        "energyRecovered": "350 kWh"
+    },
+    "hazardous": {
+        "co2Saved": "0.5 tonnes CO₂",
+        "landfillDiverted": "100%",
+        "energyRecovered": "200 kWh"
+    },
+    "industrial ash": {
+        "co2Saved": "0.6 tonnes CO₂",
+        "landfillDiverted": "100%",
+        "energyRecovered": "300 kWh"
+    },
+    "electronic": {
+        "co2Saved": "2.0 tonnes CO₂",
+        "landfillDiverted": "100%",
+        "energyRecovered": "1500 kWh"
+    },
+    "mixed": {
+        "co2Saved": "1.0 tonnes CO₂",
+        "landfillDiverted": "100%",
+        "energyRecovered": "600 kWh"
     }
-    return uses.get(waste_type, ["Various recycling applications"])
+}
+
+def get_potential_uses(waste_type):
+    return POTENTIAL_USES.get(waste_type, ["Various recycling applications"])
 
 def get_estimated_value(waste_type):
-    values = {
-        "metal": "₹16,000-33,000 per tonne",
-        "plastic": "₹10,000-15,000 per tonne",
-        "paper/cardboard": "₹6,500-12,500 per tonne",
-        "glass": "₹3,500-6,500 per tonne",
-        "organic": "₹4,000-8,000 per tonne",
-        "textile": "₹5,000-10,000 per tonne",
-        "construction": "₹2,500-6,000 per tonne",
-        "hazardous": "₹42,000-83,000 per tonne",
-        "industrial ash": "₹2,000-4,000 per tonne",
-        "electronic": "₹25,000-50,000 per tonne",
-        "mixed": "₹6,000-12,500 per tonne"
-    }
-    return values.get(waste_type, "₹8,000-16,500 per tonne")
+    return ESTIMATED_VALUES.get(waste_type, "₹8,000-16,500 per tonne")
 
 def get_environmental_impact(waste_type):
-    impacts = {
-        "metal": {
-            "co2Saved": "1.8 tonnes CO₂",
-            "landfillDiverted": "100%",
-            "energyRecovered": "1200 kWh"
-        },
-        "plastic": {
-            "co2Saved": "1.2 tonnes CO₂",
-            "landfillDiverted": "100%",
-            "energyRecovered": "850 kWh"
-        },
-        "paper/cardboard": {
-            "co2Saved": "1.0 tonnes CO₂",
-            "landfillDiverted": "100%",
-            "energyRecovered": "600 kWh"
-        },
-        "glass": {
-            "co2Saved": "0.9 tonnes CO₂",
-            "landfillDiverted": "100%",
-            "energyRecovered": "500 kWh"
-        },
-        "organic": {
-            "co2Saved": "0.8 tonnes CO₂",
-            "landfillDiverted": "100%",
-            "energyRecovered": "400 kWh"
-        },
-        "textile": {
-            "co2Saved": "1.1 tonnes CO₂",
-            "landfillDiverted": "100%",
-            "energyRecovered": "700 kWh"
-        },
-        "construction": {
-            "co2Saved": "0.7 tonnes CO₂",
-            "landfillDiverted": "100%",
-            "energyRecovered": "350 kWh"
-        },
-        "hazardous": {
-            "co2Saved": "0.5 tonnes CO₂",
-            "landfillDiverted": "100%",
-            "energyRecovered": "200 kWh"
-        },
-        "industrial ash": {
-            "co2Saved": "0.6 tonnes CO₂",
-            "landfillDiverted": "100%",
-            "energyRecovered": "300 kWh"
-        },
-        "electronic": {
-            "co2Saved": "2.0 tonnes CO₂",
-            "landfillDiverted": "100%",
-            "energyRecovered": "1500 kWh"
-        },
-        "mixed": {
-            "co2Saved": "1.0 tonnes CO₂",
-            "landfillDiverted": "100%",
-            "energyRecovered": "600 kWh"
-        }
-    }
-    return impacts.get(waste_type, {
+    return ENVIRONMENTAL_IMPACTS.get(waste_type, {
         "co2Saved": "1.0 tonnes CO₂",
         "landfillDiverted": "100%",
         "energyRecovered": "600 kWh"
@@ -2109,48 +2112,48 @@ def network_graph():
                 node_ids.add(rec['source_id'])
                 node_ids.add(rec['target_id'])
 
-            # Fetch node metadata from PostgreSQL and enrichment from Neo4j
-            if pg and node_ids:
-                for cid in node_ids:
-                    try:
-                        u = pg.get_user_by_id(cid)
-                        
-                        # Get connection counts from Neo4j for this node
-                        with neo4j_mgr.driver.session() as s2:
-                            counts = s2.run(
-                                "MATCH (c:Company {id: $uid})-[r]->() "
-                                "RETURN type(r) AS type, count(r) AS count",
-                                uid=cid
-                            ).data()
-                            
-                            deal_count = sum(c['count'] for c in counts if c['type'] == 'DEALT_WITH')
-                            chat_count = sum(c['count'] for c in counts if c['type'] == 'CHATTED_WITH')
+            # Fetch node metadata from PostgreSQL and enrichment from Neo4j in batch
+            if node_ids:
+                user_map = pg.get_users_by_ids(list(node_ids)) if pg else {}
+                
+                # Batch fetch connection counts from Neo4j for all nodes at once
+                counts_res = sess.run(
+                    "MATCH (c:Company)-[r]->() WHERE c.id IN $nids "
+                    "RETURN c.id AS cid, type(r) AS type, count(r) AS count",
+                    nids=list(node_ids)
+                ).data()
+                
+                node_counts = {}
+                for row in counts_res:
+                    cid = row['cid']
+                    if cid not in node_counts:
+                        node_counts[cid] = {'DEALT_WITH': 0, 'CHATTED_WITH': 0}
+                    rel_type = row['type']
+                    if rel_type in node_counts[cid]:
+                        node_counts[cid][rel_type] += row['count']
 
-                        if u:
-                            nodes.append({
-                                'id': cid,
-                                'name': u.get('company_name', f'Company {cid}'),
-                                'type': 'Company',
-                                'industry': u.get('industry_type', 'Unknown'),
-                                'location': u.get('location', 'Unknown'),
-                                'classifications': u.get('classifications_count', 0),
-                                'deal_count': deal_count,
-                                'chat_count': chat_count
-                            })
-                        else:
-                            nodes.append({
-                                'id': cid, 
-                                'name': f'Company {cid}', 
-                                'type': 'Company',
-                                'deal_count': deal_count,
-                                'chat_count': chat_count
-                            })
-                    except Exception:
-                        nodes.append({'id': cid, 'name': f'Company {cid}', 'type': 'Company'})
-            else:
-                # Fallback if PG not available
                 for cid in node_ids:
-                    nodes.append({'id': cid, 'name': f'Company {cid}', 'type': 'Company'})
+                    u = user_map.get(cid)
+                    counts = node_counts.get(cid, {'DEALT_WITH': 0, 'CHATTED_WITH': 0})
+                    if u:
+                        nodes.append({
+                            'id': cid,
+                            'name': u.get('company_name', f'Company {cid}'),
+                            'type': 'Company',
+                            'industry': u.get('industry_type', 'Unknown'),
+                            'location': u.get('location', 'Unknown'),
+                            'classifications': u.get('classifications_count', 0),
+                            'deal_count': counts['DEALT_WITH'],
+                            'chat_count': counts['CHATTED_WITH']
+                        })
+                    else:
+                        nodes.append({
+                            'id': cid,
+                            'name': f'Company {cid}',
+                            'type': 'Company',
+                            'deal_count': counts['DEALT_WITH'],
+                            'chat_count': counts['CHATTED_WITH']
+                        })
 
             # Graph stats for real-time monitoring
             stats_r = sess.run("MATCH (n:Company) RETURN count(n) AS companies").single()

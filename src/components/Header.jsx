@@ -51,7 +51,7 @@ const Header = () => {
 
   // ── Notification polling ──
   const fetchUnreadCount = useCallback(() => {
-    if (!user?.id) return;
+    if (!user?.id || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return;
     fetch(`/api/notifications/count?user_id=${user.id}`)
       .then(r => r.json())
       .then(d => setUnreadCount(d.unread || 0))

@@ -606,6 +606,17 @@ class PostgreSQLManager:
         """)
         return [row['industry_type'] for row in cursor.fetchall()]
 
+    def get_users_by_ids(self, user_ids: List[int]) -> Dict[int, Dict]:
+        """Fetch user records in a single batch query indexed by user ID."""
+        if not user_ids:
+            return {}
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT id, company_name, industry_type, location, classifications_count
+            FROM users WHERE id = ANY(%s)
+        """, (list(user_ids),))
+        return {row['id']: dict(row) for row in cursor.fetchall()}
+
     # ────────────────────────────────────────────────
     #  Chat / Messaging helpers
     # ────────────────────────────────────────────────
@@ -659,6 +670,8 @@ class PostgreSQLManager:
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_conv ON deals(conversation_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_status ON deals(status)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_proposer ON deals(proposer_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_responder ON deals(responder_id)")
 
         # Notifications table
         cursor.execute("""

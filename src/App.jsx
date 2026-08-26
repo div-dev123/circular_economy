@@ -15,6 +15,9 @@ import NetworkGraph from './pages/NetworkGraph';
 import Matches from './pages/Matches';
 import Chat from './pages/Chat';
 import DealHistory from './pages/DealHistory';
+import Business from './pages/Business';
+import Contact from './pages/Contact';
+import Impact from './pages/Impact';
 import './App.css';
 
 function App() {
@@ -106,6 +109,30 @@ function App() {
             element={
               <ProtectedRoute>
                 <DealHistory />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/impact"
+            element={
+              <ProtectedRoute>
+                <Impact />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/business"
+            element={
+              <ProtectedRoute>
+                <Business />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/contact"
+            element={
+              <ProtectedRoute>
+                <Contact />
               </ProtectedRoute>
             }
           />

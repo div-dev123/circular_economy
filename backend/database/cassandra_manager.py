@@ -208,46 +208,63 @@ class CassandraManager:
             logger.warning(f"Error getting waste diversion trends: {e}")
             return []
     
+    def _to_uuid(self, val: Any) -> uuid.UUID:
+        """Safely convert string/int/UUID to a valid UUID object."""
+        if isinstance(val, uuid.UUID):
+            return val
+        val_str = str(val)
+        try:
+            return uuid.UUID(val_str)
+        except (ValueError, AttributeError):
+            return uuid.uuid5(uuid.NAMESPACE_DNS, val_str)
+
     # Audit Logging
-    def log_audit_event(self, user_id: str, action: str, resource_type: str, 
-                       resource_id: str, details: str) -> None:
+    def log_audit_event(self, user_id: Any, action: str, resource_type: str, 
+                       resource_id: Any, details: str) -> None:
         """Log audit event"""
-        query = """
-        INSERT INTO audit_logs (timestamp, user_id, action, resource_type, resource_id, details)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """
-        
-        statement = self.session.prepare(query)
-        self.session.execute(statement, [
-            datetime.utcnow(),
-            uuid.UUID(user_id),
-            action,
-            resource_type,
-            uuid.UUID(resource_id),
-            details
-        ])
+        try:
+            query = """
+            INSERT INTO audit_logs (timestamp, user_id, action, resource_type, resource_id, details)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """
+            
+            statement = self.session.prepare(query)
+            self.session.execute(statement, [
+                datetime.utcnow(),
+                self._to_uuid(user_id),
+                action,
+                resource_type,
+                self._to_uuid(resource_id),
+                details
+            ])
+        except Exception as e:
+            logger.warning(f"Error logging audit event: {e}")
     
-    def get_audit_logs(self, user_id: str = None, action: str = None, 
+    def get_audit_logs(self, user_id: Any = None, action: str = None, 
                       limit: int = 100) -> List[Dict]:
         """Get audit logs with optional filtering"""
-        if user_id and action:
-            query = """
-            SELECT * FROM audit_logs 
-            WHERE user_id = ? AND action = ? 
-            LIMIT ?
-            """
-            statement = self.session.prepare(query)
-            rows = self.session.execute(statement, [uuid.UUID(user_id), action, limit])
-        elif user_id:
-            query = "SELECT * FROM audit_logs WHERE user_id = ? LIMIT ?"
-            statement = self.session.prepare(query)
-            rows = self.session.execute(statement, [uuid.UUID(user_id), limit])
-        else:
-            query = "SELECT * FROM audit_logs LIMIT ?"
-            statement = self.session.prepare(query)
-            rows = self.session.execute(statement, [limit])
-        
-        return [dict(row) for row in rows]
+        try:
+            if user_id and action:
+                query = """
+                SELECT * FROM audit_logs 
+                WHERE user_id = ? AND action = ? 
+                LIMIT ?
+                """
+                statement = self.session.prepare(query)
+                rows = self.session.execute(statement, [self._to_uuid(user_id), action, limit])
+            elif user_id:
+                query = "SELECT * FROM audit_logs WHERE user_id = ? LIMIT ?"
+                statement = self.session.prepare(query)
+                rows = self.session.execute(statement, [self._to_uuid(user_id), limit])
+            else:
+                query = "SELECT * FROM audit_logs LIMIT ?"
+                statement = self.session.prepare(query)
+                rows = self.session.execute(statement, [limit])
+            
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.warning(f"Error fetching audit logs: {e}")
+            return []
     
     # Analytics Time Series
     def record_analytics_metric(self, metric_name: str, timestamp: datetime,

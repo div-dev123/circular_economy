@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import './Profile.css';
 
 const Profile = () => {
@@ -214,22 +214,22 @@ const Profile = () => {
                   <div className="section-card">
                     <h3>Quick Actions</h3>
                     <div className="actions-grid">
-                      <a href="/classify" className="action-card">
+                      <Link to="/classify" className="action-card">
                         <span className="action-icon">📸</span>
                         <span className="action-text">Classify Waste</span>
-                      </a>
-                      <a href="/marketplace" className="action-card">
+                      </Link>
+                      <Link to="/marketplace" className="action-card">
                         <span className="action-icon">🏷️</span>
                         <span className="action-text">Marketplace</span>
-                      </a>
-                      <a href="/impact" className="action-card">
+                      </Link>
+                      <Link to="/impact" className="action-card">
                         <span className="action-icon">📊</span>
                         <span className="action-text">My Impact</span>
-                      </a>
-                      <a href="/dashboard" className="action-card">
+                      </Link>
+                      <Link to="/dashboard" className="action-card">
                         <span className="action-icon">📈</span>
                         <span className="action-text">Dashboard</span>
-                      </a>
+                      </Link>
                     </div>
                   </div>
                 </>

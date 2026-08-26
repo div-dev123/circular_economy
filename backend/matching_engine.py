@@ -147,6 +147,25 @@ class ProfileVectoriser:
 
         return np.concatenate([ind_vec, loc, act])
 
+    def vectorise_consumers_batch(self, companies: List[Dict]) -> np.ndarray:
+        """Batch encode feature vectors for a list of buyer companies."""
+        if not companies:
+            return np.empty((0, len(ALL_INDUSTRIES) + 3))
+
+        industries = np.array([[c.get('industry_type', '')] for c in companies])
+        ind_vecs = self._industry_enc.transform(industries)
+
+        loc_acts = np.array([
+            [
+                (c.get('latitude', 0) or 0) / 90.0,
+                (c.get('longitude', 0) or 0) / 180.0,
+                min((c.get('classifications_count', 0) or 0) / 100.0, 1.0)
+            ]
+            for c in companies
+        ])
+
+        return np.hstack([ind_vecs, loc_acts])
+
     def compute_similarity(self, producer_vec: np.ndarray,
                            consumer_vecs: np.ndarray) -> np.ndarray:
         """Cosine similarity between the producer vector and each consumer."""
@@ -304,7 +323,7 @@ def find_matches(
 
     # ── Stage 2: ML Cosine Similarity ──────────────────────────────
     prod_vec = _vectoriser.vectorise_producer(waste_type, producer_lat, producer_lng, quantity)
-    cons_vecs = np.array([_vectoriser.vectorise_consumer(c) for c in candidates])
+    cons_vecs = _vectoriser.vectorise_consumers_batch(candidates)
 
     sim_scores = _vectoriser.compute_similarity(prod_vec, cons_vecs)
 
