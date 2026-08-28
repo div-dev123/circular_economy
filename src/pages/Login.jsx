@@ -40,6 +40,7 @@ const Login = () => {
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -48,8 +49,9 @@ const Login = () => {
 
       const data = await response.json();
 
-      if (response.ok && data.success) {
-        // Store user data and redirect
+      if (response.ok && data && data.access_token) {
+        // Store access token and user
+        localStorage.setItem('access_token', data.access_token);
         localStorage.setItem('user', JSON.stringify(data.user));
         localStorage.setItem('isLoggedIn', 'true');
         window.dispatchEvent(new Event('storage'));

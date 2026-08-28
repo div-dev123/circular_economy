@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import './Chat.css';
+import { fetchWithAuth } from '../utils/auth';
 
 const Chat = () => {
   const [searchParams] = useSearchParams();
@@ -42,7 +43,7 @@ const Chat = () => {
   const loadConversations = useCallback(async () => {
     if (!currentUser?.id) return;
     try {
-      const res = await fetch(`/api/chat/conversations?user_id=${currentUser.id}`);
+      const res = await fetchWithAuth(`/api/chat/conversations`);
       const data = await res.json();
       const incoming = data.conversations || [];
       setConversations(prev => {
@@ -58,7 +59,7 @@ const Chat = () => {
   const loadMessages = useCallback(async () => {
     if (!activeConvId || !currentUser?.id) return;
     try {
-      const res = await fetch(`/api/chat/messages/${activeConvId}?user_id=${currentUser.id}`);
+      const res = await fetchWithAuth(`/api/chat/messages/${activeConvId}`);
       const data = await res.json();
       const incoming = data.messages || [];
       // Only update state if messages actually changed (avoids scroll-reset)
@@ -77,7 +78,7 @@ const Chat = () => {
   const loadDeals = useCallback(async () => {
     if (!activeConvId) return;
     try {
-      const res = await fetch(`/api/deals/conversation/${activeConvId}`);
+      const res = await fetchWithAuth(`/api/deals/conversation/${activeConvId}`);
       const data = await res.json();
       const incoming = data.deals || [];
       setDeals(prev => {
@@ -95,12 +96,11 @@ const Chat = () => {
     if (!activeConvId || !activeConv || dealSubmitting) return;
     setDealSubmitting(true);
     try {
-      const res = await fetch('/api/deals', {
+      const res = await fetchWithAuth('/api/deals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           conversation_id: activeConvId,
-          proposer_id: currentUser.id,
           responder_id: activeConv.partner_id,
           waste_type: dealForm.waste_type,
           quantity: parseFloat(dealForm.quantity) || 0,
@@ -123,10 +123,10 @@ const Chat = () => {
 
   const handleDealAction = async (dealId, action) => {
     try {
-      const res = await fetch(`/api/deals/${dealId}/${action}`, {
+      const res = await fetchWithAuth(`/api/deals/${dealId}/${action}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: currentUser.id }),
+        body: JSON.stringify({}),
       });
       if (res.ok) {
         await loadDeals();
@@ -149,11 +149,10 @@ const Chat = () => {
       await loadConversations();
       if (withUserId && currentUser?.id) {
         try {
-          const res = await fetch('/api/chat/start', {
+          const res = await fetchWithAuth('/api/chat/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              user_id: currentUser.id,
               other_id: Number(withUserId),
               waste_context: wasteCtx,
             }),
@@ -209,10 +208,10 @@ const Chat = () => {
     if (!text || !activeConvId || sending) return;
     setSending(true);
     try {
-      const res = await fetch(`/api/chat/messages/${activeConvId}`, {
+      const res = await fetchWithAuth(`/api/chat/messages/${activeConvId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sender_id: currentUser.id, content: text }),
+        body: JSON.stringify({ content: text }),
       });
       if (res.ok) {
         setDraft('');

@@ -538,3 +538,51 @@ circular_economy/
 This project was built as an academic demonstration of polyglot persistence and AI-driven circular economy concepts.
 - **Keep credentials** in `backend/.env` aligned with `backend/docker-compose.yml`
 
+## JWT Authentication (Backend)
+
+This project uses JSON Web Tokens (JWT) for authenticating API requests.
+
+- The backend issues an **access token** (short-lived) and a **refresh token** on successful login (`/api/auth/login`).
+- Send the access token in the `Authorization` header: `Authorization: Bearer <access_token>` for protected endpoints.
+- The refresh token is set as an `httpOnly` cookie by default; exchange it for a new access token at `/api/auth/refresh`.
+- Environment variables:
+  - `JWT_SECRET` — secret key used to sign tokens (REQUIRED in production).
+  - `JWT_ALGORITHM` — signing algorithm (default `HS256`).
+  - `ACCESS_TOKEN_EXPIRES_SECONDS` — access token lifetime (default 900 = 15 minutes).
+  - `REFRESH_TOKEN_EXPIRES_DAYS` — refresh token lifetime (default 14 days).
+
+Security notes:
+- Keep `JWT_SECRET` out of source control and set it in production environment variables or secrets manager.
+- Prefer storing refresh token as `httpOnly` cookie to avoid XSS leakage.
+- For revocation support, store refresh token identifiers server-side (Redis/Postgres) and mark them revoked on logout.
+
+Frontend integration:
+- Store access tokens in memory or `localStorage` and attach them to API requests.
+- On 401 responses, call `/api/auth/refresh` to obtain a new access token and retry the original request.
+
+Detailed Frontend Integration (step-by-step)
+
+1. Login flow
+  - POST `/api/auth/login` with `{ email, password }`.
+  - Server responds with `{ access_token, refresh_token, user }` and sets an `httpOnly` refresh cookie.
+  - Store `access_token` in `localStorage` (or memory) and `user` object for UI.
+
+2. Sending authenticated requests
+  - Add `Authorization: Bearer <access_token>` header to API requests.
+  - Include `credentials: 'include'` on `fetch` calls so the browser sends the refresh cookie when needed.
+  - Use a small helper that wraps `fetch`, automatically adds the header, and retries once after attempting a refresh.
+
+3. Refresh flow
+  - When an API returns `401 Unauthorized`, call `POST /api/auth/refresh` with `credentials: 'include'`.
+  - If the refresh succeeds, store the new access token and retry the original request.
+  - If refresh fails, redirect to `/login` and clear stored auth data.
+
+4. Logout
+  - Call `POST /api/auth/logout` to revoke the refresh token server-side and clear the cookie.
+  - Clear local storage and redirect to login.
+
+Implementation notes
+ - The repository includes `src/utils/auth.js`, a minimal helper that implements `fetchWithAuth`, `refreshAccessToken`, and token storage helpers. Update existing API calls to use `fetchWithAuth` where possible.
+ - For security, prefer keeping the refresh token only as an `httpOnly` cookie (so JavaScript cannot read it). Access tokens may be stored in memory to reduce XSS exposure.
+ - Consider adding CSRF protections if both cookies and state-changing endpoints are used alongside JWT cookies.
+

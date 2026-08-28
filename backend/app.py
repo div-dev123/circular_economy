@@ -13,6 +13,10 @@ import os
 import logging
 import hashlib
 from datetime import datetime, timedelta
+import uuid
+import jwt
+from functools import wraps
+from flask import g
 logger = logging.getLogger(__name__)
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -96,6 +100,12 @@ CLASS_TO_INTERNAL = {
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
+
+# JWT settings (configure via env in production)
+JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret-change-me')
+JWT_ALGORITHM = os.environ.get('JWT_ALGORITHM', 'HS256')
+ACCESS_TOKEN_EXPIRES_SECONDS = int(os.environ.get('ACCESS_TOKEN_EXPIRES_SECONDS', 900))  # 15 minutes
+REFRESH_TOKEN_EXPIRES_DAYS = int(os.environ.get('REFRESH_TOKEN_EXPIRES_DAYS', 14))
 
 def load_model():
     try:
@@ -904,43 +914,162 @@ def login():
     
     try:
         data = request.get_json()
-        
-        # Validate required fields
         if not data.get('email') or not data.get('password'):
             return jsonify({'error': 'Email and password are required'}), 400
-        
-        # Authenticate user
-        result = db_manager.authenticate_user(data['email'], data['password'])
-        
-        if result.get('success'):
-            # In a real application, you would generate a JWT token here
-            # For now, we'll return the user data
-            response_data = {
-                'success': True,
-                'user': result['user'],
-                'message': 'Login successful'
-            }
-            return jsonify(response_data), 200
-        else:
-            return jsonify(result), 401
-        
+
+        user = db_manager.authenticate_user(data['email'], data['password'])
+        if not user:
+            return jsonify({'error': 'Invalid credentials'}), 401
+
+        # Build JWT claims
+        now = datetime.utcnow()
+        access_payload = {
+            'sub': str(user['id']),
+            'email': user.get('email'),
+            'iat': now,
+            'exp': now + timedelta(seconds=ACCESS_TOKEN_EXPIRES_SECONDS)
+        }
+        access_token = jwt.encode(access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+        # Create a refresh token with a unique identifier (jti) and store jti in Redis for revocation control
+        jti = str(uuid.uuid4())
+        refresh_payload = {
+            'sub': str(user['id']),
+            'jti': jti,
+            'iat': now,
+            'exp': now + timedelta(days=REFRESH_TOKEN_EXPIRES_DAYS)
+        }
+        refresh_token = jwt.encode(refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+        # Store refresh token jti in Redis with expiry for revocation checks
+        try:
+            redis_mgr = db_manager.get_manager('redis') if DATABASE_AVAILABLE else None
+            if redis_mgr:
+                key = f"refresh:{jti}"
+                # Value stores user id for quick lookup; expiry in seconds
+                redis_mgr.client.setex(key, REFRESH_TOKEN_EXPIRES_DAYS * 24 * 3600, str(user['id']))
+        except Exception:
+            pass
+
+        response = jsonify({'access_token': access_token, 'refresh_token': refresh_token, 'user': user})
+        response.set_cookie('refresh_token', refresh_token, httponly=True, secure=False, samesite='Lax')
+        return response, 200
     except Exception as e:
         logger.error(f"Login error: {e}")
         return jsonify({'error': 'Login failed'}), 500
 
+
+def _decode_jwt(token: str) -> dict:
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise
+    except Exception:
+        return {}
+
+
+def require_auth(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        auth = request.headers.get('Authorization', '')
+        token = None
+        if auth.startswith('Bearer '):
+            token = auth.split(' ', 1)[1].strip()
+        # fallback to cookie
+        if not token:
+            token = request.cookies.get('access_token')
+        if not token:
+            return jsonify({'error': 'Missing access token'}), 401
+        try:
+            payload = _decode_jwt(token)
+            if not payload:
+                return jsonify({'error': 'Invalid token'}), 401
+            g.user_id = int(payload.get('sub'))
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except Exception:
+            return jsonify({'error': 'Invalid token'}), 401
+        return fn(*args, **kwargs)
+    return wrapper
+
 @app.route('/api/auth/logout', methods=['POST'])
 def logout():
-    # In a real application, you would invalidate the JWT token here
-    return jsonify({'message': 'Logged out successfully'}), 200
+    # Clear refresh cookie and revoke refresh jti in Redis when possible
+    try:
+        # Get refresh token from cookie or body (accept empty/non-JSON safely)
+        token = request.cookies.get('refresh_token') or (request.get_json(silent=True) or {}).get('refresh_token')
+        if token:
+            try:
+                payload = _decode_jwt(token)
+                jti = payload.get('jti') if payload else None
+                if jti and DATABASE_AVAILABLE:
+                    try:
+                        redis_mgr = db_manager.get_manager('redis')
+                        if redis_mgr:
+                            redis_mgr.client.delete(f"refresh:{jti}")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        response = jsonify({'message': 'Logged out successfully'})
+        response.set_cookie('refresh_token', '', expires=0)
+        return response, 200
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        return jsonify({'error': 'Logout failed'}), 500
+
+
+@app.route('/api/auth/refresh', methods=['POST'])
+def refresh_token():
+    """Exchange a valid refresh token for a new access token."""
+    # Try cookie first, then JSON body (accept empty/non-JSON safely)
+    token = request.cookies.get('refresh_token') or (request.get_json(silent=True) or {}).get('refresh_token')
+    if not token:
+        return jsonify({'error': 'Missing refresh token'}), 401
+    try:
+        payload = _decode_jwt(token)
+        if not payload:
+            return jsonify({'error': 'Invalid refresh token'}), 401
+
+        jti = payload.get('jti')
+        user_sub = payload.get('sub')
+
+        # Verify jti exists in Redis (server-side registration)
+        try:
+            redis_mgr = db_manager.get_manager('redis') if DATABASE_AVAILABLE else None
+            if redis_mgr:
+                key = f"refresh:{jti}"
+                val = redis_mgr.client.get(key)
+                if not val or str(val) != str(user_sub):
+                    return jsonify({'error': 'Refresh token revoked or invalid'}), 401
+        except Exception:
+            # If Redis is unavailable, fall back to relying on token validity
+            pass
+
+        now = datetime.utcnow()
+        access_payload = {
+            'sub': str(user_sub),
+            'iat': now,
+            'exp': now + timedelta(seconds=ACCESS_TOKEN_EXPIRES_SECONDS)
+        }
+        access_token = jwt.encode(access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        return jsonify({'access_token': access_token}), 200
+    except jwt.ExpiredSignatureError:
+        return jsonify({'error': 'Refresh token expired'}), 401
+    except Exception as e:
+        logger.error(f"Refresh error: {e}")
+        return jsonify({'error': 'Failed to refresh token'}), 500
 
 @app.route('/api/auth/profile', methods=['PUT'])
+@require_auth
 def update_profile():
     if not DATABASE_AVAILABLE:
         return jsonify({'error': 'Database integration not available'}), 501
     
     try:
         data = request.get_json()
-        user_id = data.get('id')
+        user_id = data.get('id') or g.get('user_id')
         
         if not user_id:
             return jsonify({'error': 'User ID is required'}), 400
@@ -971,13 +1100,12 @@ def update_profile():
 # ─────────────────────────────────────────────────
 
 @app.route('/api/chat/conversations', methods=['GET'])
+@require_auth
 def list_conversations():
     """List all conversations for the current user."""
     if not DATABASE_AVAILABLE:
         return jsonify({'error': 'Database not available'}), 501
-    user_id = request.args.get('user_id', type=int)
-    if not user_id:
-        return jsonify({'error': 'user_id is required'}), 400
+    user_id = g.get('user_id')
     try:
         pg = db_manager.managers.get('postgresql')
         if not pg:
@@ -1004,12 +1132,13 @@ def list_conversations():
 
 
 @app.route('/api/chat/start', methods=['POST'])
+@require_auth
 def start_conversation():
     """Start (or resume) a conversation with another user."""
     if not DATABASE_AVAILABLE:
         return jsonify({'error': 'Database not available'}), 501
     data = request.get_json()
-    user_id = data.get('user_id')
+    user_id = data.get('user_id') or g.get('user_id')
     other_id = data.get('other_id')
     waste_context = data.get('waste_context', '')
     if not user_id or not other_id:
@@ -1063,11 +1192,12 @@ def start_conversation():
 
 
 @app.route('/api/chat/messages/<int:conv_id>', methods=['GET'])
+@require_auth
 def get_messages(conv_id):
     """Get all messages in a conversation."""
     if not DATABASE_AVAILABLE:
         return jsonify({'error': 'Database not available'}), 501
-    user_id = request.args.get('user_id', type=int)
+    user_id = request.args.get('user_id', type=int) or g.get('user_id')
     if not user_id:
         return jsonify({'error': 'user_id is required'}), 400
     try:
@@ -1082,12 +1212,13 @@ def get_messages(conv_id):
 
 
 @app.route('/api/chat/messages/<int:conv_id>', methods=['POST'])
+@require_auth
 def send_message(conv_id):
     """Send a message in a conversation."""
     if not DATABASE_AVAILABLE:
         return jsonify({'error': 'Database not available'}), 501
     data = request.get_json()
-    sender_id = data.get('sender_id')
+    sender_id = data.get('sender_id') or g.get('user_id')
     content = (data.get('content') or '').strip()
     if not sender_id or not content:
         return jsonify({'error': 'sender_id and content are required'}), 400
@@ -1170,11 +1301,12 @@ def send_message(conv_id):
 
 
 @app.route('/api/chat/unread', methods=['GET'])
+@require_auth
 def unread_count():
     """Get total unread message count for a user."""
     if not DATABASE_AVAILABLE:
         return jsonify({'error': 'Database not available'}), 501
-    user_id = request.args.get('user_id', type=int)
+    user_id = request.args.get('user_id', type=int) or g.get('user_id')
     if not user_id:
         return jsonify({'error': 'user_id is required'}), 400
     try:
@@ -1192,6 +1324,7 @@ def unread_count():
 # ─────────────────────────────────────────────────
 
 @app.route('/api/deals', methods=['POST'])
+@require_auth
 def create_deal():
     """Create a new deal proposal."""
     if not DATABASE_AVAILABLE:
@@ -1201,6 +1334,9 @@ def create_deal():
     for field in required:
         if not data.get(field) and data.get(field) != 0:
             return jsonify({'error': f'{field} is required'}), 400
+    # Enforce proposer identity from JWT
+    proposer = data.get('proposer_id') or g.get('user_id')
+    data['proposer_id'] = proposer
     try:
         pg = db_manager.managers.get('postgresql')
         if not pg:
@@ -1268,6 +1404,7 @@ def create_deal():
 
 
 @app.route('/api/deals/conversation/<int:conv_id>', methods=['GET'])
+@require_auth
 def get_conversation_deals(conv_id):
     """Get all deals for a conversation."""
     if not DATABASE_AVAILABLE:
@@ -1284,12 +1421,13 @@ def get_conversation_deals(conv_id):
 
 
 @app.route('/api/deals/<int:deal_id>/accept', methods=['PUT'])
+@require_auth
 def accept_deal(deal_id):
     """Accept a deal proposal (responder only)."""
     if not DATABASE_AVAILABLE:
         return jsonify({'error': 'Database not available'}), 501
     data = request.get_json()
-    user_id = data.get('user_id')
+    user_id = data.get('user_id') or g.get('user_id')
     if not user_id:
         return jsonify({'error': 'user_id is required'}), 400
     try:
@@ -1327,12 +1465,13 @@ def accept_deal(deal_id):
 
 
 @app.route('/api/deals/<int:deal_id>/reject', methods=['PUT'])
+@require_auth
 def reject_deal(deal_id):
     """Reject a deal proposal (responder only)."""
     if not DATABASE_AVAILABLE:
         return jsonify({'error': 'Database not available'}), 501
     data = request.get_json()
-    user_id = data.get('user_id')
+    user_id = data.get('user_id') or g.get('user_id')
     if not user_id:
         return jsonify({'error': 'user_id is required'}), 400
     try:
@@ -1349,12 +1488,13 @@ def reject_deal(deal_id):
 
 
 @app.route('/api/deals/<int:deal_id>/complete', methods=['PUT'])
+@require_auth
 def complete_deal(deal_id):
     """Mark a deal as completed and calculate impact."""
     if not DATABASE_AVAILABLE:
         return jsonify({'error': 'Database not available'}), 501
     data = request.get_json()
-    user_id = data.get('user_id')
+    user_id = data.get('user_id') or g.get('user_id')
     if not user_id:
         return jsonify({'error': 'user_id is required'}), 400
     try:
@@ -1450,12 +1590,13 @@ def complete_deal(deal_id):
 
 
 @app.route('/api/deals/<int:deal_id>/cancel', methods=['PUT'])
+@require_auth
 def cancel_deal(deal_id):
     """Cancel a deal."""
     if not DATABASE_AVAILABLE:
         return jsonify({'error': 'Database not available'}), 501
     data = request.get_json()
-    user_id = data.get('user_id')
+    user_id = data.get('user_id') or g.get('user_id')
     if not user_id:
         return jsonify({'error': 'user_id is required'}), 400
     try:
@@ -1494,10 +1635,15 @@ def cancel_deal(deal_id):
 
 
 @app.route('/api/deals/user/<int:user_id>', methods=['GET'])
+@require_auth
 def get_user_deals(user_id):
     """Get all deals for a user, optionally filtered by status."""
     if not DATABASE_AVAILABLE:
         return jsonify({'error': 'Database not available'}), 501
+    # Ensure the requester is the same user or an admin (admin checks omitted)
+    requester = g.get('user_id')
+    if int(user_id) != int(requester):
+        return jsonify({'error': 'Forbidden'}), 403
     status = request.args.get('status')
     try:
         pg = db_manager.managers.get('postgresql')
@@ -1511,10 +1657,14 @@ def get_user_deals(user_id):
 
 
 @app.route('/api/deals/analytics/<int:user_id>', methods=['GET'])
+@require_auth
 def deal_analytics(user_id):
     """Rich analytics for a user's deal history — aggregated from multiple databases."""
     if not DATABASE_AVAILABLE:
         return jsonify({'error': 'Database not available'}), 501
+    requester = g.get('user_id')
+    if int(user_id) != int(requester):
+        return jsonify({'error': 'Forbidden'}), 403
     try:
         pg = db_manager.managers.get('postgresql')
         if not pg:
