@@ -441,6 +441,71 @@ pip install -r database_requirements.txt
 python3 app.py
 ```
 
+### Production (Docker + Fly.io)
+
+This project includes a production-ready `Dockerfile` for the backend at `backend/Dockerfile`. The container runs the Flask app under `gunicorn` for production.
+
+Build and run locally:
+
+```bash
+# from repository root
+docker build -t circular-backend ./backend
+docker run -p 5002:5002 -e PORT=5002 --env-file backend/.env -it circular-backend
+```
+
+Deploy to Fly.io (quick guide):
+
+1. Install `flyctl`: https://fly.io/docs/hands-on/install-flyctl/
+2. Login and init your app:
+
+```bash
+flyctl auth login
+cd backend
+flyctl launch --image circular-backend --name circular-backend --org personal --region iad
+```
+
+3. Set environment variables (replace placeholders):
+
+```bash
+flyctl secrets set JWT_SECRET="<strong-secret>" \
+  POSTGRES_URL="<postgres-conn>" MONGO_URI="<mongo-uri>" \
+  NEO4J_URI="<neo4j-uri>" NEO4J_USER="<user>" NEO4J_PASSWORD="<pass>" \
+  REDIS_URL="<redis-url>" S3_BUCKET="<bucket>" MODEL_S3_KEY="<key>"
+```
+
+4. Deploy:
+
+```bash
+flyctl deploy
+```
+
+Notes:
+- The container entrypoint is `gunicorn -w 4 -k gthread -b 0.0.0.0:5002 app:app` — tune workers/threads per instance based on memory and CPU.
+- For free-tier hosting, Fly.io provides small VMs that are suitable for CPU inference on moderate workloads. If you require GPU inference or higher throughput, use managed inference (see below).
+- The `model.pth` is intentionally excluded from the Docker image. Store the model in object storage (Hugging Face Hub or S3). On startup, the app should download the model to `/app/model.pth` if missing — see the next section for automating this.
+
+### Hosting the model artifact (free)
+
+We recommend hosting the `model.pth` on the Hugging Face Hub (free for public/private repos with limits). The backend supports two ways to fetch the model at container start:
+
+- `MODEL_HF_REPO` + `MODEL_HF_FILENAME`: repository id (e.g. `username/repo`) and filename stored in the repo. The app uses `huggingface_hub` to download the file on startup.
+- `MODEL_HTTP_URL`: a direct HTTP(S) URL to the model file (e.g. GitHub release asset, or object storage URL).
+
+Environment variables to set before deploying:
+
+- `MODEL_HF_REPO` (optional) — Hugging Face repo id to download the model from.
+- `MODEL_HF_FILENAME` (optional) — filename in the HF repo (default: `model.pth`).
+- `MODEL_HTTP_URL` (optional) — direct URL to model file.
+
+Example (using Hugging Face):
+
+```bash
+# After uploading model.pth to HF repo 'my-user/circular-models'
+flyctl secrets set MODEL_HF_REPO="my-user/circular-models" MODEL_HF_FILENAME="model.pth"
+```
+
+When the service starts, if `/app/model.pth` is missing it will attempt to download the model from the configured source. This keeps Docker images lightweight and allows you to update models without rebuilding containers.
+
 The Flask server starts on **http://localhost:5002**.
 
 ### 3. Install & run the frontend
