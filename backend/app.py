@@ -17,6 +17,8 @@ import uuid
 import jwt
 from functools import wraps
 from flask import g
+import requests
+from huggingface_hub import hf_hub_download
 logger = logging.getLogger(__name__)
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -108,6 +110,38 @@ ACCESS_TOKEN_EXPIRES_SECONDS = int(os.environ.get('ACCESS_TOKEN_EXPIRES_SECONDS'
 REFRESH_TOKEN_EXPIRES_DAYS = int(os.environ.get('REFRESH_TOKEN_EXPIRES_DAYS', 14))
 
 def load_model():
+    # If model file missing, try to download from configured sources
+    try:
+        if not os.path.exists(MODEL_PATH):
+            hf_repo = os.environ.get('MODEL_HF_REPO')
+            hf_filename = os.environ.get('MODEL_HF_FILENAME', 'model.pth')
+            model_url = os.environ.get('MODEL_HTTP_URL')
+            if hf_repo:
+                print(f"⬇️ Downloading model from Hugging Face repo: {hf_repo}...")
+                try:
+                    path = hf_hub_download(repo_id=hf_repo, filename=hf_filename)
+                    # move to MODEL_PATH
+                    os.replace(path, MODEL_PATH)
+                    print("✅ Model downloaded from Hugging Face")
+                except Exception as e:
+                    print(f"Failed to download from Hugging Face: {e}")
+            elif model_url:
+                print(f"⬇️ Downloading model from URL: {model_url}...")
+                try:
+                    r = requests.get(model_url, stream=True, timeout=60)
+                    r.raise_for_status()
+                    with open(MODEL_PATH, 'wb') as f:
+                        for chunk in r.iter_content(1024 * 1024):
+                            if chunk:
+                                f.write(chunk)
+                    print("✅ Model downloaded from HTTP URL")
+                except Exception as e:
+                    print(f"Failed to download model from URL: {e}")
+            else:
+                print("No MODEL_HF_REPO or MODEL_HTTP_URL configured — skipping download")
+    except Exception as e:
+        print(f"Model download check failed: {e}")
+
     try:
         # Load checkpoint
         checkpoint = torch.load(MODEL_PATH, map_location=DEVICE)
