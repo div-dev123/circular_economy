@@ -235,7 +235,63 @@ class PostgreSQLManager:
                 logger.info(f"Backfilled coordinates for {len(rows)} users")
         except Exception as e:
             logger.warning(f"Coordinate backfill skipped: {e}")
-    
+
+        # Auto-seed initial Indian partner companies if database is fresh
+        try:
+            cursor.execute("SELECT COUNT(*) AS cnt FROM users")
+            row = cursor.fetchone()
+            if row and row['cnt'] == 0:
+                self._seed_default_companies()
+        except Exception as e:
+            logger.warning(f"Auto-seed check skipped: {e}")
+
+    def _seed_default_companies(self):
+        """Seed initial realistic Indian companies so marketplace map and matching engine work immediately."""
+        cursor = self.connection.cursor()
+        companies = [
+            ("tata.steel@circular.in", "Tata Steel Ltd.", "Steel", "Mumbai, Maharashtra", "9820011111", 120.0, 480.0, 1500000.0),
+            ("reliance.polymers@circular.in", "Reliance Polymers", "Plastics", "Jamnagar, Gujarat", "9820022222", 85.0, 310.0, 950000.0),
+            ("hindalco.metals@circular.in", "Hindalco Industries", "Aluminum", "Renukoot, Uttar Pradesh", "9820033333", 95.0, 410.0, 1100000.0),
+            ("itc.foods@circular.in", "ITC Food Processing", "Food Processing", "Kolkata, West Bengal", "9820044444", 60.0, 220.0, 600000.0),
+            ("ultratech.cement@circular.in", "UltraTech Cement Ltd.", "Cement", "Nagpur, Maharashtra", "9820055555", 210.0, 890.0, 2400000.0),
+            ("adani.renewables@circular.in", "Adani Green Energy", "Renewable Energy", "Ahmedabad, Gujarat", "9820066666", 75.0, 350.0, 820000.0),
+            ("mahindra.auto@circular.in", "Mahindra Auto Components", "Automobile", "Pune, Maharashtra", "9820077777", 110.0, 430.0, 1350000.0),
+            ("arvind.textiles@circular.in", "Arvind Mills Ltd.", "Textiles", "Ahmedabad, Gujarat", "9820088888", 45.0, 180.0, 490000.0),
+            ("biocon.pharma@circular.in", "Biocon Pharmaceuticals", "Pharmaceuticals", "Bangalore, Karnataka", "9820099999", 30.0, 140.0, 750000.0),
+            ("lt.construction@circular.in", "Larsen & Toubro Ltd.", "Construction", "Chennai, Tamil Nadu", "9820100000", 350.0, 1200.0, 3100000.0),
+            ("bhabha.electronics@circular.in", "Bharat Electronics", "Electronics", "Noida, Uttar Pradesh", "9820111111", 40.0, 210.0, 920000.0),
+            ("jk.paper@circular.in", "JK Paper & Packaging", "Paper & Pulp", "Delhi, Delhi", "9820122222", 80.0, 290.0, 780000.0),
+            ("saint.gobain@circular.in", "Saint-Gobain Glass India", "Glass", "Chennai, Tamil Nadu", "9820133333", 65.0, 260.0, 890000.0),
+            ("godrej.agrovet@circular.in", "Godrej Agrovet Ltd.", "Agriculture", "Nashik, Maharashtra", "9820144444", 90.0, 310.0, 640000.0),
+            ("clean.harbors@circular.in", "Green Clean Waste Management", "Waste Management", "Thane, Maharashtra", "9820155555", 140.0, 520.0, 1600000.0),
+            ("vedanta.metals@circular.in", "Vedanta Mining & Metals", "Metals & Mining", "Jodhpur, Rajasthan", "9820166666", 130.0, 510.0, 1750000.0),
+            ("srf.chemicals@circular.in", "SRF Specialty Chemicals", "Chemicals", "Gurugram, Haryana", "9820177777", 55.0, 240.0, 830000.0),
+            ("ambuja.cement@circular.in", "Ambuja Cements Ltd.", "Cement", "Panaji, Goa", "9820188888", 175.0, 680.0, 1950000.0),
+            ("infosys.hardware@circular.in", "Infosys Tech Hardware Lab", "IT Hardware", "Bangalore, Karnataka", "9820199999", 35.0, 160.0, 690000.0),
+            ("asian.paints@circular.in", "Asian Paints Industrial", "Chemicals", "Vadodara, Gujarat", "9820200000", 70.0, 280.0, 910000.0)
+        ]
+        
+        insert_query = """
+        INSERT INTO users (
+            email, password_hash, salt, company_name, industry_type, location, phone,
+            latitude, longitude, classifications_count, listings_count,
+            waste_processed_tons, co2_saved_tons, cost_savings
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (email) DO NOTHING
+        """
+        
+        # Default password is Password@123
+        pwd_hash, salt = self.hash_password("Password@123")
+        
+        for email, comp, ind, loc, phone, waste, co2, savings in companies:
+            lat, lng = self._geocode_location(loc)
+            cursor.execute(insert_query, (
+                email, pwd_hash, salt, comp, ind, loc, phone,
+                lat, lng, 12, 4, waste, co2, savings
+            ))
+        
+        logger.info(f"Successfully auto-seeded {len(companies)} initial Indian companies into database")
+
     # User Management
     def create_user(self, user_data: Dict[str, Any]) -> int:
         """Create a new user"""
