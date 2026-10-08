@@ -33,9 +33,10 @@ except ImportError as e:
 # Import database manager
 try:
     from database.database_manager import db_manager
-    DATABASE_AVAILABLE = True
-except ImportError as e:
+    DATABASE_AVAILABLE = db_manager is not None and bool(db_manager.managers)
+except Exception as e:
     print(f"Database manager not available: {e}")
+    db_manager = None
     DATABASE_AVAILABLE = False
 
 # Correct Model Architecture

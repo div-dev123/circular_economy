@@ -2,13 +2,39 @@ from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
 import logging
 from datetime import datetime
 from .config import DATABASE_CONFIG
-from .neo4j_manager import Neo4jManager
-from .mongodb_manager import MongoDBManager
-from .redis_manager import RedisManager
-from .cassandra_manager import CassandraManager
-from .postgresql_manager import PostgreSQLManager
 
 logger = logging.getLogger(__name__)
+
+# Safely import managers so a missing optional driver doesn't crash the entire platform
+try:
+    from .postgresql_manager import PostgreSQLManager
+except Exception as e:
+    PostgreSQLManager = None
+    logger.warning(f"PostgreSQLManager not available: {e}")
+
+try:
+    from .redis_manager import RedisManager
+except Exception as e:
+    RedisManager = None
+    logger.warning(f"RedisManager not available: {e}")
+
+try:
+    from .mongodb_manager import MongoDBManager
+except Exception as e:
+    MongoDBManager = None
+    logger.warning(f"MongoDBManager not available: {e}")
+
+try:
+    from .neo4j_manager import Neo4jManager
+except Exception as e:
+    Neo4jManager = None
+    logger.warning(f"Neo4jManager not available: {e}")
+
+try:
+    from .cassandra_manager import CassandraManager
+except Exception as e:
+    CassandraManager = None
+    logger.warning(f"CassandraManager not available: {e}")
 
 class DatabaseManager:
     def __init__(self):
@@ -16,64 +42,11 @@ class DatabaseManager:
         self._initialize_connections()
     
     def _initialize_connections(self):
-        """Initialize all database connections"""
-        try:
-            # Neo4j (Graph DB)
+        """Initialize all available database connections"""
+        # PostgreSQL (Relational Core)
+        if PostgreSQLManager:
             try:
-                neo4j_config = DATABASE_CONFIG['neo4j']
-                self.managers['neo4j'] = Neo4jManager(
-                    uri=neo4j_config['uri'],
-                    username=neo4j_config['username'],
-                    password=neo4j_config['password']
-                )
-                logger.info("Neo4j connection initialized")
-            except Exception as e:
-                logger.warning(f"Neo4j connection failed: {e}")
-                logger.info("If this is your first time using Neo4j, run: python setup_neo4j_password.py")
-            
-            # MongoDB (Document DB)
-            try:
-                mongo_config = DATABASE_CONFIG['mongodb']
-                self.managers['mongodb'] = MongoDBManager(
-                    uri=mongo_config['uri'],
-                    database=mongo_config['database']
-                )
-                logger.info("MongoDB connection initialized")
-            except Exception as e:
-                logger.warning(f"MongoDB connection failed: {e}")
-                logger.info("Make sure MongoDB is running. You can start it with: docker-compose up mongodb")
-            
-            # Redis (Key-Value)
-            try:
-                redis_config = DATABASE_CONFIG['redis']
-                self.managers['redis'] = RedisManager(
-                    host=redis_config['host'],
-                    port=redis_config['port'],
-                    db=redis_config['db'],
-                    password=redis_config['password'],
-                    url=redis_config.get('url')
-                )
-                logger.info("Redis connection initialized")
-            except Exception as e:
-                logger.warning(f"Redis connection failed: {e}")
-                logger.info("Make sure Redis is running. You can start it with: docker-compose up redis")
-            
-            # Cassandra (Column-Family)
-            try:
-                cassandra_config = DATABASE_CONFIG['cassandra']
-                self.managers['cassandra'] = CassandraManager(
-                    hosts=cassandra_config['hosts'],
-                    keyspace=cassandra_config['keyspace'],
-                    port=cassandra_config['port']
-                )
-                logger.info("Cassandra connection initialized")
-            except Exception as e:
-                logger.warning(f"Cassandra connection failed: {e}")
-                logger.info("Make sure Cassandra is running. You can start it with: docker-compose up cassandra")
-            
-            # PostgreSQL (Relational)
-            try:
-                postgres_config = DATABASE_CONFIG['postgresql']
+                postgres_config = DATABASE_CONFIG.get('postgresql', {})
                 self.managers['postgresql'] = PostgreSQLManager(
                     host=postgres_config['host'],
                     port=postgres_config['port'],
@@ -85,11 +58,68 @@ class DatabaseManager:
                 logger.info("PostgreSQL connection initialized")
             except Exception as e:
                 logger.warning(f"PostgreSQL connection failed: {e}")
-                logger.info("Make sure PostgreSQL is running. You can start it with: docker-compose up postgresql")
-                
-        except Exception as e:
-            logger.error(f"Database initialization failed: {e}")
-            raise
+
+        # Redis (Key-Value / Cache)
+        if RedisManager:
+            try:
+                redis_config = DATABASE_CONFIG.get('redis', {})
+                # Only attempt connection if URL or host is configured and not default unconfigured localhost on remote
+                if redis_config.get('url') or (redis_config.get('host') and redis_config.get('password')):
+                    self.managers['redis'] = RedisManager(
+                        host=redis_config.get('host', 'localhost'),
+                        port=redis_config.get('port', 6379),
+                        db=redis_config.get('db', 0),
+                        password=redis_config.get('password'),
+                        url=redis_config.get('url')
+                    )
+                    logger.info("Redis connection initialized")
+            except Exception as e:
+                logger.warning(f"Redis connection failed: {e}")
+
+        # MongoDB (Document DB)
+        if MongoDBManager:
+            try:
+                mongo_config = DATABASE_CONFIG.get('mongodb', {})
+                # Only attempt if non-localhost URI is configured
+                mongo_uri = mongo_config.get('uri', '')
+                if mongo_uri and 'localhost' not in mongo_uri and '127.0.0.1' not in mongo_uri:
+                    self.managers['mongodb'] = MongoDBManager(
+                        uri=mongo_uri,
+                        database=mongo_config.get('database', 'circular_economy')
+                    )
+                    logger.info("MongoDB connection initialized")
+            except Exception as e:
+                logger.warning(f"MongoDB connection failed: {e}")
+
+        # Neo4j (Graph DB)
+        if Neo4jManager:
+            try:
+                neo4j_config = DATABASE_CONFIG.get('neo4j', {})
+                neo_uri = neo4j_config.get('uri', '')
+                if neo_uri and 'localhost' not in neo_uri and '127.0.0.1' not in neo_uri:
+                    self.managers['neo4j'] = Neo4jManager(
+                        uri=neo_uri,
+                        username=neo4j_config.get('username', 'neo4j'),
+                        password=neo4j_config.get('password', '')
+                    )
+                    logger.info("Neo4j connection initialized")
+            except Exception as e:
+                logger.warning(f"Neo4j connection failed: {e}")
+
+        # Cassandra (Column-Family)
+        if CassandraManager:
+            try:
+                cassandra_config = DATABASE_CONFIG.get('cassandra', {})
+                cass_hosts = cassandra_config.get('hosts', [])
+                if cass_hosts and cass_hosts != ['127.0.0.1'] and cass_hosts != ['localhost']:
+                    self.managers['cassandra'] = CassandraManager(
+                        hosts=cass_hosts,
+                        keyspace=cassandra_config.get('keyspace', 'circular_economy'),
+                        port=cassandra_config.get('port', 9042)
+                    )
+                    logger.info("Cassandra connection initialized")
+            except Exception as e:
+                logger.warning(f"Cassandra connection failed: {e}")
     
     def get_manager(self, db_type: str):
         """Get specific database manager"""
