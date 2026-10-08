@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://circular-connect-api.onrender.com/api/$1"
+      "destination": "https://circular-economy-uvpk.onrender.com/api/$1"
     },
     {
       "source": "/(.*)",
