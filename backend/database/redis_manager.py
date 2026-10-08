@@ -7,16 +7,21 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 class RedisManager:
-    def __init__(self, host: str, port: int, db: int, password: str = None):
+    def __init__(self, host: str = 'localhost', port: int = 6379, db: int = 0, password: str = None, url: str = None):
         try:
-            self.client = redis.Redis(
-                host=host,
-                port=port,
-                db=db,
-                password=password,
-                decode_responses=True,
-                health_check_interval=30
-            )
+            if url:
+                self.client = redis.from_url(url, decode_responses=True, health_check_interval=30)
+            else:
+                use_ssl = bool(host and host not in ('localhost', '127.0.0.1') and (port == 6380 or port == 6379 or password))
+                self.client = redis.Redis(
+                    host=host,
+                    port=port,
+                    db=db,
+                    password=password,
+                    ssl=use_ssl,
+                    decode_responses=True,
+                    health_check_interval=30
+                )
             self.client.ping()
             logger.info("Redis connection successful")
         except Exception as e:

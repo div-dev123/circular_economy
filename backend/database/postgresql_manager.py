@@ -10,18 +10,25 @@ import secrets
 logger = logging.getLogger(__name__)
 
 class PostgreSQLManager:
-    def __init__(self, host: str, port: int, database: str, username: str, password: str):
+    def __init__(self, host: str, port: int, database: str, username: str, password: str, sslmode: str = None):
         try:
+            # Build connection kwargs
+            conn_kwargs = {
+                'host': host,
+                'port': port,
+                'database': database,
+                'user': username,
+                'password': password,
+                'cursor_factory': RealDictCursor
+            }
+            if sslmode:
+                conn_kwargs['sslmode'] = sslmode
+            elif host not in ('localhost', '127.0.0.1'):
+                conn_kwargs['sslmode'] = 'require'
+
             # Try to connect with the provided credentials
             try:
-                self.connection = psycopg2.connect(
-                    host=host,
-                    port=port,
-                    database=database,
-                    user=username,
-                    password=password,
-                    cursor_factory=RealDictCursor
-                )
+                self.connection = psycopg2.connect(**conn_kwargs)
             except psycopg2.OperationalError as e:
                 if 'role' in str(e) and 'does not exist' in str(e):
                     logger.warning(f"Role '{username}' does not exist, trying with default 'postgres' role")

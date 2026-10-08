@@ -50,7 +50,8 @@ class DatabaseManager:
                     host=redis_config['host'],
                     port=redis_config['port'],
                     db=redis_config['db'],
-                    password=redis_config['password']
+                    password=redis_config['password'],
+                    url=redis_config.get('url')
                 )
                 logger.info("Redis connection initialized")
             except Exception as e:
@@ -78,7 +79,8 @@ class DatabaseManager:
                     port=postgres_config['port'],
                     database=postgres_config['database'],
                     username=postgres_config['username'],
-                    password=postgres_config['password']
+                    password=postgres_config['password'],
+                    sslmode=postgres_config.get('sslmode')
                 )
                 logger.info("PostgreSQL connection initialized")
             except Exception as e:
