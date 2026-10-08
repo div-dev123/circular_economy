@@ -107,7 +107,7 @@ CORS(app)  # Enable CORS for React frontend
 # JWT settings (configure via env in production)
 JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret-change-me')
 JWT_ALGORITHM = os.environ.get('JWT_ALGORITHM', 'HS256')
-ACCESS_TOKEN_EXPIRES_SECONDS = int(os.environ.get('ACCESS_TOKEN_EXPIRES_SECONDS', 900))  # 15 minutes
+ACCESS_TOKEN_EXPIRES_SECONDS = int(os.environ.get('ACCESS_TOKEN_EXPIRES_SECONDS', 604800))  # 7 days
 REFRESH_TOKEN_EXPIRES_DAYS = int(os.environ.get('REFRESH_TOKEN_EXPIRES_DAYS', 14))
 
 def load_model():
@@ -947,10 +947,49 @@ def register():
         # Register user
         result = db_manager.register_user(user_data)
         
-        if 'error' in result:
-            return jsonify(result), 400
+        if not result or 'error' in result:
+            return jsonify(result or {'error': 'Registration failed'}), 400
         
-        return jsonify(result), 201
+        user = result.get('user') or {}
+        user_id = result.get('user_id') or user.get('id')
+        
+        # Build JWT claims so newly registered user is immediately authenticated
+        now = datetime.utcnow()
+        access_payload = {
+            'sub': str(user_id),
+            'email': user.get('email', data['email']),
+            'iat': now,
+            'exp': now + timedelta(seconds=ACCESS_TOKEN_EXPIRES_SECONDS)
+        }
+        access_token = jwt.encode(access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+        jti = str(uuid.uuid4())
+        refresh_payload = {
+            'sub': str(user_id),
+            'jti': jti,
+            'iat': now,
+            'exp': now + timedelta(days=REFRESH_TOKEN_EXPIRES_DAYS)
+        }
+        refresh_token = jwt.encode(refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+        # Store refresh token jti in Redis if available
+        try:
+            redis_mgr = db_manager.get_manager('redis') if DATABASE_AVAILABLE else None
+            if redis_mgr:
+                key = f"refresh:{jti}"
+                redis_mgr.client.setex(key, REFRESH_TOKEN_EXPIRES_DAYS * 24 * 3600, str(user_id))
+        except Exception:
+            pass
+
+        response = jsonify({
+            'success': True,
+            'user_id': user_id,
+            'user': user,
+            'access_token': access_token,
+            'refresh_token': refresh_token
+        })
+        response.set_cookie('refresh_token', refresh_token, httponly=True, secure=False, samesite='Lax')
+        return response, 201
         
     except Exception as e:
         logger.error(f"Registration error: {e}")
@@ -963,11 +1002,19 @@ def login():
     
     try:
         data = request.get_json()
-        if not data.get('email') or not data.get('password'):
+        if not data or not data.get('email') or not data.get('password'):
             return jsonify({'error': 'Email and password are required'}), 400
 
-        user = db_manager.authenticate_user(data['email'], data['password'])
-        if not user:
+        auth_result = db_manager.authenticate_user(data['email'], data['password'])
+        if not auth_result or not isinstance(auth_result, dict):
+            return jsonify({'error': 'Invalid credentials'}), 401
+
+        if auth_result.get('success') is False:
+            return jsonify({'error': auth_result.get('error', 'Invalid credentials')}), 401
+
+        # Support both {'success': True, 'user': {...}} and direct user dicts from mocks
+        user = auth_result.get('user') if 'user' in auth_result else auth_result
+        if not user or not user.get('id'):
             return jsonify({'error': 'Invalid credentials'}), 401
 
         # Build JWT claims

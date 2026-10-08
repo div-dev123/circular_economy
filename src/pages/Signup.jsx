@@ -67,6 +67,7 @@ const Signup = () => {
 
       const response = await fetch('/api/auth/register', {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -76,7 +77,10 @@ const Signup = () => {
       const data = await response.json();
 
       if (response.ok && data.success) {
-        // Store user data and redirect
+        // Store access token and user data
+        if (data.access_token) {
+          localStorage.setItem('access_token', data.access_token);
+        }
         localStorage.setItem('user', JSON.stringify(data.user));
         localStorage.setItem('isLoggedIn', 'true');
         window.dispatchEvent(new Event('storage'));
